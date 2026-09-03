@@ -381,6 +381,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/github-fleet-task-store.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/herdr-backend.md",
       "audience": "operator-current"
     },
@@ -486,6 +490,10 @@
     },
     {
       "path": "docs/verification/lint-option-a.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "docs/verification/github-fleet-task-store-spike.md",
       "audience": "maintainer-verification"
     },
     {
