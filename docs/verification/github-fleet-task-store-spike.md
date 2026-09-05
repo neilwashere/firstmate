@@ -113,11 +113,51 @@ A server-side `tier:P1-now` query returned the first 100 of 292 matching items i
 A plain text query returned broad title matches, which proves the query path exists but is not an exact identity guarantee.
 
 The inspected project has no Task ID text field, so this spike did not mutate it merely to prove exact custom-text filtering.
-The isolated live canary must verify that `task-id:<id>` narrows by the custom field and must still compare returned Task ID values exactly.
-If GitHub does not narrow that field reliably, the adapter needs a bounded index cache refreshed outside task locks or a different indexed identity surface before rollout.
+That remaining uncertainty was closed separately by the Task ID canary recorded below.
 
 An unfiltered project scan is too slow for a dispatch-time task probe and gets slower as Done history accumulates.
 Exact task reads must use server-side narrowing, and full active snapshots must run outside per-task runtime locks with explicit pagination, time, completeness, and freshness bounds.
+
+## Task ID canary
+
+Exact custom-text filtering was the one activation blocker this spike could not settle by reading an existing project.
+It was settled against a disposable personal project created and deleted for the purpose, so no shared board was mutated.
+The fixture set was chosen to hunt false negatives rather than to confirm the happy path.
+
+Field-scoped narrowing is exact and rejects every planted decoy.
+
+```
+query                total  matched Task ID values
+task-id:fm-0007      2      fm-0007, FM-0007
+fm-0007              4      fm-0007, fm-00071, FM-0007, fm-9999
+task-id:fm-007       1      fm-007
+task-id:fm-does-not-exist  0
+no:task-id           1      the single untagged item of 17
+```
+
+The superstring `fm-00071`, the prefix `fm-007`, the separator variant `fm_0007`, and the embedded `xfm-0007` were all excluded.
+The item whose title mentions `fm-0007` while carrying Task ID `fm-9999` was excluded by the field-scoped query and returned by the plain text query.
+Plain text search therefore matches titles as well as fields and cannot be used for identity.
+Matching is exact rather than prefix, which the reverse probe on the shorter id confirms.
+
+The search index is not read-your-writes consistent.
+
+```
+direct node read by item id   0.26-0.46s   resolved on the first attempt in 5 of 5 trials
+search index visibility       1.07-3.61s   n=5
+```
+
+A verification step that reads back through search can therefore observe its own successful write as absent.
+Every mutation returns the item node id, so postcondition verification must read that handle and search must be reserved for discovery.
+Only the ambiguous create path lacks a handle, and that path must treat absence as unproven until a bounded retry window expires.
+The measured spread is a floor rather than a budget, because it was taken on a small project rather than under load.
+
+Field-scoped matching is case-insensitive, so `task-id:fm-0007` returns both `fm-0007` and `FM-0007`.
+Exact comparison after narrowing still separates them, but two homes minting ids that differ only by case would be indistinguishable to the index.
+Task ids must therefore be minted from a case-normalised alphabet.
+
+The canary ran on a 17-item personal project using draft issues, so it does not characterise an 839-item organisation project under concurrent writers.
+It proves the identity mechanism rather than its behaviour at scale.
 
 ## Independent review
 
@@ -179,6 +219,8 @@ A GitHub adapter added before those seams are corrected would force Firstmate in
 - A source-or-destination replay rule is required for partially completed ownership batches.
 - The stable task id cannot be replaced by the issue number because issue numbers are repository-scoped and Firstmate ids are filesystem keys.
 - Duplicate identity checks must use a narrowed server query and exact value comparison rather than scanning or trusting the first match.
+- Postcondition verification must read the item node id returned by the mutation, because the project search index lags the write by seconds and would report a successful write as absent.
+- Task ids must be minted from a case-normalised alphabet, because field-scoped project search is case-insensitive.
 - Project status fields in different projects are independent, while issue title, body, assignees, labels, and open state are global.
 - Project administrators and repository administrators do not necessarily have issue or project deletion rights, so ordinary cancellation must not depend on deletion and provisioning must preflight the exact required mutations rather than infer authority from broad token scopes.
 - Migration must refuse while any participating home has a pending backlog-close record or a runtime-to-backlog contradiction.
@@ -194,7 +236,7 @@ Those changes are independently useful and preserve the ability to absorb future
 The no-go conditions for a production canary are now explicit.
 
 - No command-layer backend type test may remain on a lifecycle path used by GitHub.
-- Exact Task ID lookup must meet its dispatch-time bound on a large project.
+- Exact Task ID lookup is proven correct in isolation and must still meet its dispatch-time bound on a large project.
 - Captain-held cleanup must no longer require body replacement.
 - Relay-enabled homes must have a supported obligation store or refuse GitHub.
 - Cutover must have no pending close record or contradictory task inventory.
