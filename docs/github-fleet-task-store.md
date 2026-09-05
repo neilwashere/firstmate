@@ -199,11 +199,14 @@ The adapter reconciles the two only at defined lifecycle seams.
 
 Every remote mutation follows read, plan, mutate, verify, and acknowledge.
 The mutation is successful only when a fresh read proves the intended postcondition.
+That fresh read resolves the item node id returned by the mutation and never the project search index, because the index lags a write by seconds and would report a successful write as absent.
+Search is a discovery mechanism for locating an item whose handle is not already held.
 Repeated execution with the same intent is idempotent.
 
 GitHub GraphQL mutations are not treated as transactions, even when several fields are submitted in one request.
 The backend must expect partial success, rate limiting, stale project field ids, and ambiguous network outcomes.
 GitHub issue creation has no idempotency key, so a fleet-only issue is created with an exact hidden creation marker and an ambiguous retry scans recent issues back to the recorded intent time before creating again.
+Ambiguous creation is the only recovery path with no item handle to verify against, so it must treat absence as unproven until a bounded retry window expires rather than creating again on the first empty result.
 
 Project field authority is partitioned to reduce write races.
 The captain owns priority and intake disposition, the current task home owns execution fields, and the routing operation owns the home field while a queued task has no live worker.
@@ -234,6 +237,7 @@ Those projections consume structured task and runtime fields rather than GitHub 
 The existing prose-derived deferred marker is not portable and must be converted to structured waits during migration rather than reimplemented against issue-body excerpts.
 
 An exact task lookup uses the Project items query filter for the configured Task ID field and then verifies an exact field value.
+Field-scoped narrowing is exact rather than prefix, but it is case-insensitive, so task ids are minted from a case-normalised alphabet and the returned values are still compared exactly.
 It returns every exact match so duplicate ids remain a hard error without scanning the full project.
 A full active snapshot runs outside per-task runtime locks, excludes historical Done items unless requested, paginates to completion inside a declared time and item bound, and records observation freshness.
 A per-task transition uses an exact lookup and a hard network timeout while its local lifecycle lock is held.
