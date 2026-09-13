@@ -1,0 +1,17 @@
+5c5,6
+< in_flight[1]{id,kind,state,repo,name,doing}:
+---
+> in_flight[2]{id,kind,state,repo,name,doing}:
+>   keith-api/keith-api-checkout,ship,working,keith,Rework the checkout fee schedule,harness busy (claude-hook)
+8,9c9,10
+<   keith-api,captain_decision,Choose the client-facing fee copy,structured-home,fresh,0,false,"structured home state invalid: in-flight backlog item has no child metadata: keith-api-checkout"
+<   keith-web,captain_decision,Choose the client-facing fee copy,structured-home,fresh,0,false,"structured home state invalid: in-flight backlog item has no child metadata: keith-web-fees"
+---
+>   keith-api,captain_decision,Choose the client-facing fee copy,structured-home,fresh,0,false,"-"
+>   keith-web,captain_decision,Choose the client-facing fee copy,structured-home,fresh,0,false,"-"
+11,12c12,13
+<   keith-api,null,null,orphan_in_flight,"[\"keith-api-checkout\"]"
+<   keith-web,null,null,orphan_in_flight,"[\"keith-web-fees\"]"
+---
+>   keith-api,null,null,null,"[]"
+>   keith-web,null,null,null,"[]"

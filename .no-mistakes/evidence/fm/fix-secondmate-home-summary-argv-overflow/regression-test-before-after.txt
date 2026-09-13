@@ -1,0 +1,15 @@
+=== base commit b182d0f (pre-fix), running this branch's tests/fm-home-summary-refresh.test.sh ===
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+not ok - secondmate home-summary mode reported an error for many long held decisions: /tmp/fm-prefix-base/bin/fm-fleet-snapshot.sh: line 833: /usr/bin/jq: Argument list too long
+exit: 0
+
+=== branch tip 4baefbd (post-fix), same test file ===
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - many long held decisions on one task publish without exec argument transport
+ok - one oversized status line publishes a readable home summary untruncated
+ok - mirrored oversized status lines survive the parent secondmate aggregation
+ok - a failed open-decision write keeps every task row and never hands an oversized fold to exec
+exit: 0

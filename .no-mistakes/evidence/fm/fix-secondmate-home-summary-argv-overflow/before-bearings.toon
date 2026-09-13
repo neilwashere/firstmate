@@ -1,0 +1,33 @@
+schema: fm-bearings.v1
+home: keith-repro-before.QzAsHj/main
+generated: "2026-09-13T19:52:45Z"
+prs: "not_requested (run: /bearings include PRs)"
+in_flight[1]{id,kind,state,repo,name,doing}:
+  keith-web/keith-web-checkout,ship,working,keith,Rework the checkout fee schedule,harness busy (claude-hook)
+secondmates[2]{id,state,doing,provenance,freshness,age_seconds,contradiction,reason}:
+  keith-api,captain_decision,Choose the client-facing fee copy,structured-home,fresh,0,false,"structured home state invalid: in-flight backlog item has no child metadata: keith-api-checkout"
+  keith-web,captain_decision,Choose the client-facing fee copy,structured-home,fresh,0,false,"structured home state invalid: in-flight backlog item has no child metadata: keith-web-fees"
+secondmate_reconcile[2]{id,spawn_gen,host,kind,ids}:
+  keith-api,null,null,orphan_in_flight,"[\"keith-api-checkout\"]"
+  keith-web,null,null,orphan_in_flight,"[\"keith-web-fees\"]"
+decisions_open[2]{id,key,verb,summary,owner}:
+  keith-api/keith-api-copy-call,keith-api-copy-call,captain-hold,"Choose the client-facing fee copy: captain choice pending",keith-api
+  keith-web/keith-web-copy-call,keith-web-copy-call,captain-hold,"Choose the client-facing fee copy: captain choice pending",keith-web
+landed[4]{id,what,artifact,owner}:
+  keith-api-search,Ship title search caching,"https://github.com/keith/keith/pull/701",keith-api
+  keith-web-search,Ship title search caching,"https://github.com/keith/keith/pull/701",keith-web
+  keith-api-audit,Land the audit-log migration,"https://github.com/keith/keith/pull/698",keith-api
+  keith-web-audit,Land the audit-log migration,"https://github.com/keith/keith/pull/698",keith-web
+gates: []
+reports: []
+recorded_prs: []
+unhealthy_endpoints[2]{id,backend,target,exists,agent}:
+  keith-api,tmux,"fmtest:fm-keith-api",true,dead
+  keith-web,tmux,"fmtest:fm-keith-web",true,dead
+omitted[6]{surface,reveal}:
+  backlog item bodies,"--fields bodies"
+  task paths,"--fields paths"
+  watch/steer actions,"--fields actions"
+  healthy endpoint detail,"--fields endpoints"
+  full scout-report inventory,"--all-reports"
+  live PR discovery + checks,"--include-prs"

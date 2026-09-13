@@ -1,0 +1,150 @@
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "generated": "2026-08-28T10:00:00Z",
+  "generated_epoch": 1787911200,
+  "home": "/tmp/keith-repro-after.QDai3Z/keith-api",
+  "valid": true,
+  "reason": null,
+  "invalidity": {
+    "kind": null,
+    "ids": []
+  },
+  "state": "captain_decision",
+  "active_children": [
+    {
+      "id": "keith-api-checkout",
+      "kind": "ship",
+      "state": "working",
+      "repo": "keith",
+      "name": "Rework the checkout fee schedule",
+      "source": "pane",
+      "doing": "harness busy (claude-hook)"
+    }
+  ],
+  "decisions_open": [
+    {
+      "id": "keith-api-copy-call",
+      "key": "keith-api-copy-call",
+      "verb": "captain-hold",
+      "summary": "Choose the client-facing fee copy",
+      "reason": "captain choice pending",
+      "hold_until": null,
+      "hold_bucket": "live",
+      "hold_age_days": null,
+      "source": "backlog"
+    },
+    {
+      "id": "keith-api-fees",
+      "key": "fee-copy",
+      "verb": "needs-decision",
+      "summary": "confirm the completion fee wording",
+      "reason": null,
+      "source": "status"
+    }
+  ],
+  "holds": [
+    {
+      "id": "keith-api-copy-call",
+      "title": "Choose the client-facing fee copy",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "captain choice pending",
+      "source": "backlog"
+    },
+    {
+      "id": "keith-api-fees",
+      "title": "keith-api-fees",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "confirm the completion fee wording",
+      "source": "child-state"
+    }
+  ],
+  "queued": [
+    {
+      "id": "keith-api-copy-call",
+      "title": "Choose the client-facing fee copy",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": "captain choice pending",
+      "hold_kind": "captain",
+      "hold_until": null,
+      "hold_bucket": "live",
+      "hold_age_days": null,
+      "captain_actionable": true,
+      "repo": "keith",
+      "kind": "captain",
+      "since": null
+    }
+  ],
+  "landed": [
+    {
+      "id": "keith-api-search",
+      "title": "Ship title search caching",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/keith/keith/pull/701",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "verb": "merged",
+        "date": "2026-08-27"
+      }
+    },
+    {
+      "id": "keith-api-audit",
+      "title": "Land the audit-log migration",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/keith/keith/pull/698",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "verb": "merged",
+        "date": "2026-08-26"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "keith-api-checkout",
+      "state": "working",
+      "source": "pane",
+      "endpoint": {
+        "target": "fmtest:fm-keith-api-checkout",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "keith-api-fees",
+      "state": "parked",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fmtest:fm-keith-api-fees",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "active_children": 1,
+    "decisions_open": 2,
+    "holds": 2,
+    "queued": 1,
+    "landed": 2,
+    "endpoints": 2
+  },
+  "omitted": []
+}

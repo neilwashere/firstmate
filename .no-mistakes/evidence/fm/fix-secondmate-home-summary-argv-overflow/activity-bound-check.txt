@@ -1,0 +1,9 @@
+=== before: parent snapshot with FM_SNAPSHOT_PARENT_ACTIVITY_BYTES=300000 ===
+    exit: 1
+    stderr: /tmp/fm-prefix-base/bin/fm-fleet-snapshot.sh: line 337: /usr/bin/jq: Argument list too long
+    stderr: fm-fleet-snapshot: task observation failed
+    NO SNAPSHOT - Bearings has nothing to render
+
+=== after: parent snapshot with FM_SNAPSHOT_PARENT_ACTIVITY_BYTES=300000 ===
+    exit: 0
+    {"secondmate_records":["keith-api"],"provenance":["structured-home"],"parent_event_raw_bytes":[200022],"activity_records":[1],"activity_record_bytes":[200000],"activity_scan":[{"available":true,"input_truncated":false,"records_in_window":1,"reasons":[]}]}
