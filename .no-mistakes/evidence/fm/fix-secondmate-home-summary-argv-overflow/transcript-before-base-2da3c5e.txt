@@ -1,0 +1,68 @@
+=== BEFORE (base 2da3c5e) ===
+firstmate root under test : /tmp/fm-base-root.udaUTM
+fm-fleet-snapshot.sh sha1 : f527fdbbe08d88fc925c152d935be2a7030ee49d
+one status line, bytes    : 186155 (MAX_ARG_STRLEN is 131072)
+
+--- 1. the secondmate publishes its own home summary -----------------
+fm-home-summary-refresh: summary producer failed with exit 1: fm-fleet-snapshot: task observation failed 
+writer exit: 1
+
+published /tmp/fm-argv-repro.dAHXIa/portal-mate-home/state/home-summary.json:
+jq: error: Could not open file /tmp/fm-argv-repro.dAHXIa/portal-mate-home/state/home-summary.json: No such file or directory
+summary unreadable
+
+--- 2. what the captain sees in Bearings -----------------------------
+schema: fm-bearings.v1
+home: fm-argv-repro.dAHXIa/captain-home
+generated: "2026-09-15T18:09:34Z"
+prs: "not_requested (run: /bearings include PRs)"
+in_flight: []
+secondmates[1]{id,state,doing,provenance,freshness,age_seconds,contradiction,reason}:
+  portal-mate,unknown,"structured home ledger is missing, unreadable, or invalid",unknown,unknown,null,false,"structured home ledger is missing, unreadable, or invalid"
+secondmate_reconcile: []
+decisions_open: []
+landed: []
+gates: []
+reports: []
+recorded_prs: []
+unhealthy_endpoints[1]{id,backend,target,exists,agent}:
+  portal-mate,tmux,"fmtest:fm-portal-mate",true,dead
+omitted[7]{surface,reveal}:
+  backlog item bodies,"--fields bodies"
+  task paths,"--fields paths"
+  watch/steer actions,"--fields actions"
+  healthy endpoint detail,"--fields endpoints"
+  full scout-report inventory,"--all-reports"
+  "secondmate home(s) with unreadable structured state: 1",inspect the listed secondmate home ledgers
+  live PR discovery + checks,"--include-prs"
+
+--- 3. what the captain sees in the fleet view -----------------------
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /tmp/fm-argv-repro.dAHXIa/captain-home
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| portal-mate | unknown / none | secondmate | /tmp/fm-argv-repro.dAHXIa/portal-mate-home | tmux | present / dead | - | /tmp/fm-argv-repro.dAHXIa/portal-mate-home | bin/fm-send.sh fm-portal-mate '<request>' - read status/doc return channel; do not routinely fm-peek a secondmate for answers |
+
+## Queued
+No queued backlog records found.
+
+## Done
+No done backlog records found.
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+
+--- 4. the child home rows inside the parent snapshot ----------------
+{
+  "id": "portal-mate",
+  "state": "unknown",
+  "reason": "structured home ledger is missing, unreadable, or invalid",
+  "invalidity_kind": null,
+  "children": [],
+  "open_decisions": []
+}
+

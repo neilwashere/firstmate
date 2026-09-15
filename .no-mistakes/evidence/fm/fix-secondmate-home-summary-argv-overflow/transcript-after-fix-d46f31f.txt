@@ -1,0 +1,84 @@
+=== AFTER (fix d46f31f) ===
+firstmate root under test : /home/neil_keith_com/.no-mistakes/worktrees/8d4e8e2579c7/01M2K33QMXBE7W8RC6ZJSWY1P2
+fm-fleet-snapshot.sh sha1 : 8ca06ce35f61a6e1fb127afdd16119b1bd005253
+one status line, bytes    : 186155 (MAX_ARG_STRLEN is 131072)
+
+--- 1. the secondmate publishes its own home summary -----------------
+writer exit: 0
+
+published /tmp/fm-argv-repro.SALVEH/portal-mate-home/state/home-summary.json:
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "valid": true,
+  "invalidity_kind": null,
+  "orphan_in_flight": [],
+  "endpoint_ids": [
+    "docs-pass",
+    "release-gate"
+  ],
+  "decisions_open": [
+    {
+      "id": "release-gate",
+      "key": "canary-rollout",
+      "verb": "needs-decision",
+      "note_bytes": 161
+    }
+  ]
+}
+
+--- 2. what the captain sees in Bearings -----------------------------
+schema: fm-bearings.v1
+home: fm-argv-repro.SALVEH/captain-home
+generated: "2026-09-15T18:10:34Z"
+prs: "not_requested (run: /bearings include PRs)"
+in_flight[1]{id,kind,state,repo,name,doing}:
+  portal-mate/docs-pass,ship,working,portal,Ordinary follow-up task,drafting the release notes
+secondmates[1]{id,state,doing,provenance,freshness,age_seconds,contradiction,reason}:
+  portal-mate,active_child_work,"docs-pass: drafting the release notes",structured-home,fresh,0,false,"-"
+secondmate_reconcile[1]{id,spawn_gen,host,kind,ids}:
+  portal-mate,null,null,null,"[]"
+decisions_open: []
+landed: []
+gates: []
+reports: []
+recorded_prs: []
+unhealthy_endpoints[1]{id,backend,target,exists,agent}:
+  portal-mate,tmux,"fmtest:fm-portal-mate",true,dead
+omitted[6]{surface,reveal}:
+  backlog item bodies,"--fields bodies"
+  task paths,"--fields paths"
+  watch/steer actions,"--fields actions"
+  healthy endpoint detail,"--fields endpoints"
+  full scout-report inventory,"--all-reports"
+  live PR discovery + checks,"--include-prs"
+
+--- 3. what the captain sees in the fleet view -----------------------
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /tmp/fm-argv-repro.SALVEH/captain-home
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| portal-mate | unknown / none | secondmate | /tmp/fm-argv-repro.SALVEH/portal-mate-home | tmux | present / dead | - | /tmp/fm-argv-repro.SALVEH/portal-mate-home | bin/fm-send.sh fm-portal-mate '<request>' - read status/doc return channel; do not routinely fm-peek a secondmate for answers |
+
+## Queued
+No queued backlog records found.
+
+## Done
+No done backlog records found.
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+
+--- 4. the child home rows inside the parent snapshot ----------------
+{
+  "id": "portal-mate",
+  "state": "captain_decision",
+  "reason": null,
+  "invalidity_kind": null,
+  "children": [],
+  "open_decisions": []
+}
+

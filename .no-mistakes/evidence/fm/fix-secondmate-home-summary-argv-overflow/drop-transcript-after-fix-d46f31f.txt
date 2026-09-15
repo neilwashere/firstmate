@@ -1,0 +1,51 @@
+=== AFTER (fix d46f31f) ===
+firstmate root under test : /home/neil_keith_com/.no-mistakes/worktrees/8d4e8e2579c7/01M2K33QMXBE7W8RC6ZJSWY1P2
+fm-fleet-snapshot.sh sha1 : 8ca06ce35f61a6e1fb127afdd16119b1bd005253
+status log bytes          : 152451 across 60 open decisions (MAX_ARG_STRLEN is 131072)
+
+--- 1. the secondmate publishes its own home summary -----------------
+writer exit: 0
+
+{
+  "valid": true,
+  "invalidity_kind": null,
+  "invalidity_ids": [],
+  "reason": null,
+  "state": "captain_decision",
+  "tasks_seen": [
+    "docs-pass",
+    "migration-run"
+  ],
+  "decisions_open_count": 60
+}
+
+--- 2. the same read straight from the producer (stderr shown) --------
+producer exit: 0
+producer stderr: 
+{
+  "valid": true,
+  "invalidity_kind": null,
+  "tasks_seen": [
+    "docs-pass",
+    "migration-run"
+  ],
+  "decisions_open_count": 60
+}
+
+--- 3. what the captain sees in Bearings -----------------------------
+secondmates[1]{id,state,doing,provenance,freshness,age_seconds,contradiction,reason}:
+  portal-mate,active_child_work,"docs-pass: drafting the release notes",structured-home,fresh,0,false,"-"
+secondmate_reconcile[1]{id,spawn_gen,host,kind,ids}:
+  portal-mate,null,null,null,"[]"
+decisions_open: []
+landed: []
+
+--- 4. the child home as the parent aggregation reports it ------------
+{
+  "id": "portal-mate",
+  "state": "captain_decision",
+  "reason": null,
+  "child_tasks": [],
+  "child_open_decisions": 20
+}
+

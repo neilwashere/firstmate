@@ -1,0 +1,70 @@
+# diff of the two captain-facing runs (scenario A: 60 open decisions, 152,451-byte fold)
+# "<" = base 2da3c5e   ">" = fix d46f31f
+1,3c1,3
+< === BEFORE (base 2da3c5e) ===
+< firstmate root under test : /tmp/fm-base-root.udaUTM
+< fm-fleet-snapshot.sh sha1 : f527fdbbe08d88fc925c152d935be2a7030ee49d
+---
+> === AFTER (fix d46f31f) ===
+> firstmate root under test : /home/neil_keith_com/.no-mistakes/worktrees/8d4e8e2579c7/01M2K33QMXBE7W8RC6ZJSWY1P2
+> fm-fleet-snapshot.sh sha1 : 8ca06ce35f61a6e1fb127afdd16119b1bd005253
+10,16c10,14
+<   "valid": false,
+<   "invalidity_kind": "orphan_in_flight",
+<   "invalidity_ids": [
+<     "migration-run"
+<   ],
+<   "reason": "in-flight backlog item has no child metadata: migration-run",
+<   "state": "active_child_work",
+---
+>   "valid": true,
+>   "invalidity_kind": null,
+>   "invalidity_ids": [],
+>   "reason": null,
+>   "state": "captain_decision",
+18c16,17
+<     "docs-pass"
+---
+>     "docs-pass",
+>     "migration-run"
+20c19
+<   "decisions_open_count": 0
+---
+>   "decisions_open_count": 60
+25c24
+< producer stderr: /tmp/fm-base-root.udaUTM/bin/fm-fleet-snapshot.sh: line 833: /usr/bin/jq: Argument list too long
+---
+> producer stderr: 
+27,28c26,27
+<   "valid": false,
+<   "invalidity_kind": "orphan_in_flight",
+---
+>   "valid": true,
+>   "invalidity_kind": null,
+30c29,30
+<     "docs-pass"
+---
+>     "docs-pass",
+>     "migration-run"
+32c32
+<   "decisions_open_count": 0
+---
+>   "decisions_open_count": 60
+37c37
+<   portal-mate,active_child_work,"docs-pass: drafting the release notes",structured-home,fresh,0,false,"structured home state invalid: in-flight backlog item has no child metadata: migration-run"
+---
+>   portal-mate,active_child_work,"docs-pass: drafting the release notes",structured-home,fresh,0,false,"-"
+39c39
+<   portal-mate,null,null,orphan_in_flight,"[\"migration-run\"]"
+---
+>   portal-mate,null,null,null,"[]"
+46,47c46,47
+<   "state": "active_child_work",
+<   "reason": "structured home state invalid: in-flight backlog item has no child metadata: migration-run",
+---
+>   "state": "captain_decision",
+>   "reason": null,
+49c49
+<   "child_open_decisions": 0
+---
+>   "child_open_decisions": 20

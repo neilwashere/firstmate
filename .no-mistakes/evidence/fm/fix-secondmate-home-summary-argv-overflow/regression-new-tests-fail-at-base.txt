@@ -1,0 +1,7 @@
+$ bash tests/fm-home-summary-refresh.test.sh   # run with bin/fm-fleet-snapshot.sh from BASE 2da3c5e
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+not ok - secondmate home-summary mode reported an error for many long held decisions: /tmp/fm-base-root.udaUTM/bin/fm-fleet-snapshot.sh: line 833: /usr/bin/jq: Argument list too long
+exit=1

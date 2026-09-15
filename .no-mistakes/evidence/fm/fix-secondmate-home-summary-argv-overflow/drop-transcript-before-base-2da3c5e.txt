@@ -1,0 +1,51 @@
+=== BEFORE (base 2da3c5e) ===
+firstmate root under test : /tmp/fm-base-root.udaUTM
+fm-fleet-snapshot.sh sha1 : f527fdbbe08d88fc925c152d935be2a7030ee49d
+status log bytes          : 152451 across 60 open decisions (MAX_ARG_STRLEN is 131072)
+
+--- 1. the secondmate publishes its own home summary -----------------
+writer exit: 0
+
+{
+  "valid": false,
+  "invalidity_kind": "orphan_in_flight",
+  "invalidity_ids": [
+    "migration-run"
+  ],
+  "reason": "in-flight backlog item has no child metadata: migration-run",
+  "state": "active_child_work",
+  "tasks_seen": [
+    "docs-pass"
+  ],
+  "decisions_open_count": 0
+}
+
+--- 2. the same read straight from the producer (stderr shown) --------
+producer exit: 0
+producer stderr: /tmp/fm-base-root.udaUTM/bin/fm-fleet-snapshot.sh: line 833: /usr/bin/jq: Argument list too long
+{
+  "valid": false,
+  "invalidity_kind": "orphan_in_flight",
+  "tasks_seen": [
+    "docs-pass"
+  ],
+  "decisions_open_count": 0
+}
+
+--- 3. what the captain sees in Bearings -----------------------------
+secondmates[1]{id,state,doing,provenance,freshness,age_seconds,contradiction,reason}:
+  portal-mate,active_child_work,"docs-pass: drafting the release notes",structured-home,fresh,0,false,"structured home state invalid: in-flight backlog item has no child metadata: migration-run"
+secondmate_reconcile[1]{id,spawn_gen,host,kind,ids}:
+  portal-mate,null,null,orphan_in_flight,"[\"migration-run\"]"
+decisions_open: []
+landed: []
+
+--- 4. the child home as the parent aggregation reports it ------------
+{
+  "id": "portal-mate",
+  "state": "active_child_work",
+  "reason": "structured home state invalid: in-flight backlog item has no child metadata: migration-run",
+  "child_tasks": [],
+  "child_open_decisions": 0
+}
+
