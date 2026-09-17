@@ -1,0 +1,20 @@
+$ wc -c data/backlog.md
+96919
+
+$ bin/fm-fleet-snapshot.sh --contribution-input | wc -c   # canonical ownership pair
+573648
+exit status: 0
+stderr: 
+parsed backlog JSON bytes: 418383 (Linux MAX_ARG_STRLEN is 131072)
+backlog records carried: 401
+
+$ bin/fm-contributions.sh snapshot input.json --all   # coverage the captain reads
+{"known":1,"checked":1,"complete":true,"errors":null,"rows":[{"task":"delivery","url":"https://github.com/o/r/pull/21"}]}
+exit status: 0
+
+$ chmod 000 data/backlog.md && bin/fm-contributions.sh poll   # canonical input unreadable
+stdout: 
+stderr: /home/neil_keith_com/.no-mistakes/worktrees/8d4e8e2579c7/01M2QG8XTJJ2TMZ4QPEBK4JHA2/bin/fm-fleet-snapshot.sh: line 417: /tmp/fm-argv-contrib.dQxTzm/after-home/data/backlog.md: Permission denied
+fm-fleet-snapshot: backlog read failed
+fm-contributions: canonical contribution input unavailable
+exit status: 1

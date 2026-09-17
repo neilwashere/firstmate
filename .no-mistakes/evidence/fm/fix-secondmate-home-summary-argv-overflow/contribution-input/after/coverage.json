@@ -1,0 +1,43 @@
+{
+  "known": 1,
+  "checked": 1,
+  "counts": {
+    "captain": 0,
+    "fleet": 0,
+    "maintainer": 1,
+    "nobody": 0
+  },
+  "unmeasured": 0,
+  "complete": true,
+  "proven_clear": true,
+  "stale_verdicts": 0,
+  "missing_verdicts": 0,
+  "unreadable_records": 0,
+  "valid_until": 1789546500,
+  "captain": [],
+  "captain_omitted": 0,
+  "rows": [
+    {
+      "task": "delivery",
+      "url": "https://github.com/o/r/pull/21",
+      "kind": "pr",
+      "checked_at": "2026-09-16T08:00:00Z",
+      "checked": true,
+      "final": false,
+      "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "verdict": null,
+      "reviews": [],
+      "distinct_checks": 1,
+      "missing_verdicts": 0,
+      "pending_checks": 0,
+      "failed_checks": 0,
+      "stale_verdicts": 0,
+      "signals": [],
+      "actor": "maintainer",
+      "reason": "delivery awaits the maintainer",
+      "tasks": [
+        "delivery"
+      ]
+    }
+  ]
+}

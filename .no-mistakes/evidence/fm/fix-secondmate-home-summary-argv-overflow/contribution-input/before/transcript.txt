@@ -1,0 +1,19 @@
+$ wc -c data/backlog.md
+96919
+
+$ bin/fm-fleet-snapshot.sh --contribution-input | wc -c   # canonical ownership pair
+0
+exit status: 0
+stderr: /tmp/fm-argv-evidence.SCHd0g/bin-base/fm-fleet-snapshot.sh: line 1978: /usr/bin/jq: Argument list too long
+parsed backlog JSON bytes: 0 (Linux MAX_ARG_STRLEN is 131072)
+backlog records carried: 
+
+$ bin/fm-contributions.sh snapshot input.json --all   # coverage the captain reads
+{"known":1,"checked":1,"complete":false,"errors":null,"rows":[{"task":"delivery","url":"https://github.com/o/r/pull/21"}]}
+exit status: 0
+
+$ chmod 000 data/backlog.md && bin/fm-contributions.sh poll   # canonical input unreadable
+stdout: 
+stderr: /tmp/fm-argv-evidence.SCHd0g/bin-base/fm-fleet-snapshot.sh: line 380: /tmp/fm-argv-contrib.dQxTzm/before-home/data/backlog.md: Permission denied
+fm-fleet-snapshot: backlog read failed
+exit status: 1
