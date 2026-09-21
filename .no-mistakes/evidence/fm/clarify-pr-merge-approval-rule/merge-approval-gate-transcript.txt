@@ -1,0 +1,46 @@
+AGENTS.md hard rule 2 on this branch:
+2. **Never merge a PR without approval from the captain.**
+   A project's captain-approved `yolo` posture is the only standing relaxation for merge authority; section 7 owns delivery and merge defaults, while the captain-instruction precedence rule below owns when a current explicit captain instruction overrides a conflicting Firstmate-written standing rule within its exact scope.
+
+=== setup: a green ship PR waiting on the captain ===
+backlog row (captain-facing):
+task:
+  id: captain-approval-demo
+  title: Ship the sample change
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: yes
+  hold_reason: captain merge approval pending
+  hold_kind: captain
+  hold_until: "-"
+  kind: ship
+  repo: sample
+
+=== attempt 1: merge with NO approval from the captain ===
+exit status: 1
+stderr:
+error: task captain-approval-demo is still held for the captain; release it before merging
+forge merge calls recorded: 0
+persisted merge authority: none
+
+=== the captain approves ===
+released: captain-approval-demo
+
+=== attempt 2: same merge, now WITH approval from the captain ===
+exit status: 0
+stdout:
+armed: state/captain-approval-demo.check.sh
+verified: https://github.com/sample/sample/pull/31 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+forge merge calls recorded: 1
+gh merge command: pr merge 31 --repo sample/sample --match-head-commit 1111111111111111111111111111111111111111 --squash
+persisted merge authority record (state/captain-approval-demo.merge-authority):
+fm-merge-authority-v1
+github
+github.com
+sample/sample
+31
+attended
+
+=== verdict ===
+PASS: the PR merged only after approval from the captain was recorded.
