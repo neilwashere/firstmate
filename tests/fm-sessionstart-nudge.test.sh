@@ -967,18 +967,56 @@ JS
   pass "Pi retains a bounded digest prefix and loudly marks oversized preflight delivery"
 }
 
-test_run_resume_delegates_to_the_nudge() {
-  local root="$TMP_ROOT/run-resume" out status=0
+# A live verified harness outside this test's ancestry, holding a home lock the
+# way another attended session would.
+start_foreign_harness() {  # <dir>; prints the harness pid
+  local dir=$1
+  mkdir -p "$dir"
+  ln -sf /bin/bash "$dir/codex"
+  "$dir/codex" -c 'sleep 60' >/dev/null 2>&1 &
+  printf '%s\n' "$!"
+}
+
+# A herdr-restored or otherwise unattended resume has no person to act on a
+# nudge. With no live lock owner, the restored session takes the helm itself.
+test_run_resume_without_a_live_owner_takes_the_helm() {
+  local root out status source
+  for source in resume reload fork; do
+    root="$TMP_ROOT/run-$source-unowned"
+    make_run_primary "$root"
+    status=0
+    out=$(run_hook "$root" --source "$source" </dev/null) || status=$?
+    expect_code 0 "$status" "run wrapper $source with no lock"
+    assert_contains "$out" "$FULL_BANNER$root" "$source with no lock did not take the helm"
+    assert_not_contains "$out" "FIRSTMATE_OP" "$source with no lock also emitted the nudge"
+    assert_present "$root/state/.lock" "$source with no lock did not acquire the fleet lock"
+  done
+  root="$TMP_ROOT/run-resume-stale"
   make_run_primary "$root"
+  printf '%s\n' 2147483646 > "$root/state/.lock"
+  status=0
   out=$(run_hook "$root" --source resume </dev/null) || status=$?
-  expect_code 0 "$status" "run wrapper resume"
-  [ "$out" = "$NUDGE_LINE" ] || fail "resume did not delegate to the exact nudge line, got: $out"
-  assert_absent "$root/state/.lock" "resume acquired the fleet lock instead of delegating"
-  pass "run wrapper: resume delegates to the nudge instead of re-running the digest"
+  expect_code 0 "$status" "run wrapper resume with a stale lock"
+  assert_contains "$out" "$FULL_BANNER$root" "resume over a dead lock owner did not take the helm"
+  [ "$(cat "$root/state/.lock")" != 2147483646 ] || fail "resume over a dead lock owner left the stale lock"
+  pass "run wrapper: resume, reload and fork with no live lock owner take the helm"
+}
+
+test_run_resume_with_a_live_foreign_owner_nudges() {
+  local root="$TMP_ROOT/run-resume-foreign" out status=0 holder
+  make_run_primary "$root"
+  holder=$(start_foreign_harness "$TMP_ROOT/foreign-harness")
+  printf '%s\n' "$holder" > "$root/state/.lock"
+  out=$(run_hook "$root" --source resume </dev/null) || status=$?
+  kill "$holder" 2>/dev/null || true
+  expect_code 0 "$status" "run wrapper resume under a live foreign owner"
+  [ "$out" = "$NUDGE_LINE" ] || fail "resume under a live foreign owner did not delegate to the nudge, got: $out"
+  [ "$(cat "$root/state/.lock")" = "$holder" ] || fail "resume took a lock another live session holds"
+  pass "run wrapper: resume while another live session holds the lock delegates to the nudge"
 }
 
 test_run_reads_source_from_the_hook_payload() {
-  local root="$TMP_ROOT/run-payload" out status=0
+  local root="$TMP_ROOT/run-payload" out status=0 holder
   make_run_primary "$root"
   run_hook "$root" --source startup </dev/null >/dev/null
   out=$(printf '{"session_id":"s1","hook_event_name":"SessionStart","source":"compact"}' |
@@ -986,12 +1024,15 @@ test_run_reads_source_from_the_hook_payload() {
   expect_code 0 "$status" "run wrapper payload compact"
   assert_contains "$out" "$REEMIT_BANNER$root" "a compact hook payload was not routed to a re-emit"
 
-  # A fresh root, because the compact case above legitimately took the lock and
-  # an owned lock is exactly when the nudge is supposed to stay silent.
+  # A fresh root under a live foreign owner, because an owned lock keeps the
+  # nudge silent and a free one now takes the helm.
   root="$TMP_ROOT/run-payload-resume"
   make_run_primary "$root"
+  holder=$(start_foreign_harness "$TMP_ROOT/foreign-harness-payload")
+  printf '%s\n' "$holder" > "$root/state/.lock"
   status=0
   out=$(printf '{"source":"resume","cwd":"/nowhere"}' | run_hook "$root") || status=$?
+  kill "$holder" 2>/dev/null || true
   expect_code 0 "$status" "run wrapper payload resume"
   assert_contains "$out" "FIRSTMATE_OP" "a resume hook payload did not delegate to the nudge"
   assert_not_contains "$out" "SESSION START" "a resume hook payload still ran the digest"
@@ -1037,6 +1078,52 @@ test_run_gate_and_scope_are_silent() {
   pass "run wrapper: ordinary ineligible opens stay silent-zero and Pi preflight gets an explicit silent stand-down"
 }
 
+test_run_creates_missing_state_on_a_fresh_primary() {
+  local root="$TMP_ROOT/run-fresh-primary" base="$TMP_ROOT/run-fresh-linked-base"
+  local linked="$TMP_ROOT/run-fresh-linked" out status=0
+  make_run_primary "$root"
+  rmdir "$root/state"
+  assert_absent "$root/state" "the fixture still had a state dir before the assertion began"
+
+  out=$(run_hook "$root" --source startup </dev/null) || status=$?
+  expect_code 0 "$status" "run wrapper startup on a fresh primary with no state dir"
+  assert_present "$root/state" "a fresh primary root did not get its state dir created"
+  assert_contains "$out" "$FULL_BANNER$root" \
+    "creating the state dir did not let a fresh primary's session start run"
+  assert_contains "$out" "lock acquired: harness pid" \
+    "creating the state dir did not let a fresh primary take the fleet lock"
+  assert_not_contains "$out" "$REEMIT_BANNER" \
+    "a fresh primary's first session was misrouted to a context re-emit"
+  assert_contains "$out" "NEXT STEP" "a fresh primary did not receive the complete digest"
+
+  # An unmarked linked task worktree stays ineligible: it must not have a state
+  # dir manufactured for it, so the existing scope refusal is unchanged.
+  fm_git_worktree "$base" "$linked" fm/run-fresh-linked
+  mkdir -p "$linked/bin"
+  : > "$linked/AGENTS.md"
+  assert_absent "$linked/state" "the linked fixture already had a state dir before the assertion began"
+  expect_silent_zero "linked worktree fresh state run" run_hook "$linked" --source startup
+  assert_absent "$linked/state" "an unmarked linked task worktree got a state dir created for it"
+  pass "run wrapper: a fresh primary checkout gets its missing state dir created, a linked worktree still does not"
+}
+
+test_run_reports_a_state_dir_it_cannot_create() {
+  local root="$TMP_ROOT/run-fresh-readonly" out err_file="$TMP_ROOT/run-fresh-readonly.err" status=0
+  make_run_primary "$root"
+  rmdir "$root/state"
+  chmod 0500 "$root"
+  out=$(run_hook "$root" --source startup </dev/null 2>"$err_file") || status=$?
+  chmod 0700 "$root"
+  expect_code 0 "$status" "run wrapper on a fresh primary whose state dir cannot be created"
+  [ -z "$out" ] || fail "a failed state dir creation must still stand down without a digest, got: $out"
+  assert_absent "$root/state" "a read-only fresh primary somehow got a state dir"
+  [ "$(wc -l <"$err_file")" -eq 1 ] || fail "expected exactly one stderr line, got: $(cat "$err_file")"
+  assert_contains "$(cat "$err_file")" \
+    "startup could not create the state directory $root/state: Permission denied" \
+    "a failed state dir creation did not say what failed and why"
+  pass "run wrapper: a fresh primary that cannot create its state dir says so on stderr, then stands down"
+}
+
 test_run_reports_a_failed_session_start_as_digest_text() {
   local root="$TMP_ROOT/run-unwritable" out status=0
   make_run_primary "$root"
@@ -1063,10 +1150,13 @@ test_run_rebuild_forwards_source_to_drifted_instruction_refresh
 test_run_compact_without_completion_refreshes_before_finishing_startup
 test_run_clear_without_completion_finishes_startup
 test_run_clear_rejects_previous_owner_completion
-test_run_resume_delegates_to_the_nudge
+test_run_resume_without_a_live_owner_takes_the_helm
+test_run_resume_with_a_live_foreign_owner_nudges
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm
 test_run_gate_and_scope_are_silent
+test_run_creates_missing_state_on_a_fresh_primary
+test_run_reports_a_state_dir_it_cannot_create
 test_run_reports_a_failed_session_start_as_digest_text
 test_pi_startup_classifies_cli_continuations
 test_pi_sessionstart_generation_prerequisite
