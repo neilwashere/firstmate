@@ -1,0 +1,29 @@
+================================================================
+STILL ALERTS - lanes the authorised suppression must not swallow
+================================================================
+same unchanged idle pane and same real bin/fm-watch.sh as the held-lane
+transcript; one supervision round each, FM_STALE_ESCALATE_SECS=1
+
+--- backlog row In flight, not held (nothing explains the quiet)
+    must still alert: possible wedge
+    supervisor woken: stale: crew:ship-docs (idle 1s, possible wedge, escalation 1)
+    wedge escalations on record: 1
+
+--- row held for the captain, but the crew IS working (run-step)
+    must still alert: possible wedge - a working task that stops responding is the real wedge
+    supervisor woken: stale: crew:ship-docs (idle 1s, possible wedge, escalation 1)
+    wedge escalations on record: 1
+
+    (first round with the hold live, expected silent: "")
+--- the captain answered and released the hold: newly actionable
+    must still alert: possible wedge again, within one FM_STALE_ESCALATE_SECS
+    supervisor woken: stale: crew:ship-docs (idle 4s, possible wedge, escalation 1)
+    wedge escalations on record: 1
+
+    (first round with the hold live, expected silent: "")
+--- held lane whose pane changed: a new sighting
+    must still alert: the plain first-sight stale wake
+    supervisor woken: stale: crew:ship-docs
+    wedge escalations on record: (none)
+
+=== end of transcript ===

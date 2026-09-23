@@ -1,0 +1,36 @@
+================================================================
+AFTER  - fix applied (HEAD 0ffc881, authorised idle-alert suppression)
+================================================================
+crew window        : crew:ship-docs  (pane content unchanged every poll)
+worker status line : working: still tidying the branch
+crew current state : state: working - source: status-log - still tidying the branch
+backlog row        : - [ ] ship-docs - refresh the architecture docs (since 2026-09-23) (hold: awaiting the captain on whether to land the docs rewrite) (hold-kind: captain)|  Captain hold set: 2026-09-21T12:13:01Z|## Queued|## Done|
+
+--- supervision round 1 (idle threshold reached)
+watcher stayed running: nothing surfaced, no supervising turn spent
+wake queue entries for this window: 0 (was 0)
+wedge escalation count on record   : (none)
+
+--- supervision round 2 (same unchanged pane)
+watcher stayed running: nothing surfaced, no supervising turn spent
+wake queue entries for this window: 0 (was 0)
+wedge escalation count on record   : (none)
+
+--- supervision round 3 (same unchanged pane)
+watcher stayed running: nothing surfaced, no supervising turn spent
+wake queue entries for this window: 0 (was 0)
+wedge escalation count on record   : (none)
+
+--- and then the long bounded recheck the absorb still owes
+settled-wait record on disk: state/.waiting-since-crew_ship-docs
+  identity: held:captain call:2026-09-21T12:13:01Z#0 gen: r1:3334007374726f6e673a323034393a343237333532343a323032362d30392d32332031323a31333a30302e313232333735373137202b3030303000726567756c61722066696c653a38316134002d007265616461626c65007265616461626c65
+aging it past FM_PAUSE_RESURFACE_SECS (240s here, 14400s shipped default)
+--- supervision round 4 (recheck cadence elapsed)
+watcher surfaced and exited, waking the supervisor with:
+    stale: crew:ship-docs (idle 1s, waiting 172835s - held for the captain in the backlog, awaiting the captain, rechecked on a long cadence not a wedge; answer the held decision or release the hold)
+wake queue entries for this window: 1 (was 0)
+wedge escalation count on record   : (none)
+what the supervising turn drains  :
+    1790165616	1	stale	crew:ship-docs	stale: crew:ship-docs (idle 1s, waiting 172835s - held for the captain in the backlog, awaiting the captain, rechecked on a long cadence not a wedge; answer the held decision or release the hold)
+
+=== end of transcript ===

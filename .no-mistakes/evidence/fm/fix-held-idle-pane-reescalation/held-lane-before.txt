@@ -1,0 +1,36 @@
+================================================================
+BEFORE - base bin/fm-watch.sh (9296f9b, the reported behaviour)
+================================================================
+crew window        : crew:ship-docs  (pane content unchanged every poll)
+worker status line : working: still tidying the branch
+crew current state : state: working - source: status-log - still tidying the branch
+backlog row        : - [ ] ship-docs - refresh the architecture docs (since 2026-09-23) (hold: awaiting the captain on whether to land the docs rewrite) (hold-kind: captain)|  Captain hold set: 2026-09-21T12:12:36Z|## Queued|## Done|
+
+--- supervision round 1 (idle threshold reached)
+watcher surfaced and exited, waking the supervisor with:
+    stale: crew:ship-docs (idle 1s, possible wedge, escalation 1)
+wake queue entries for this window: 1 (was 0)
+wedge escalation count on record   : 1
+what the supervising turn drains  :
+    1790165558	1	stale	crew:ship-docs	stale: crew:ship-docs (idle 1s, possible wedge, escalation 1)
+
+--- supervision round 2 (same unchanged pane)
+watcher surfaced and exited, waking the supervisor with:
+    stale: crew:ship-docs (idle 1s, possible wedge, escalation 2)
+wake queue entries for this window: 1 (was 0)
+wedge escalation count on record   : 2
+what the supervising turn drains  :
+    1790165562	2	stale	crew:ship-docs	stale: crew:ship-docs (idle 1s, possible wedge, escalation 2)
+
+--- supervision round 3 (same unchanged pane)
+watcher surfaced and exited, waking the supervisor with:
+    stale: crew:ship-docs (idle 1s, possible wedge, escalation 3, demand-deep-inspection: same pane has wedge-escalated 3 times in a row - do not re-absorb on the run-step/pane state alone)
+wake queue entries for this window: 1 (was 0)
+wedge escalation count on record   : 3
+what the supervising turn drains  :
+    1790165566	3	stale	crew:ship-docs	stale: crew:ship-docs (idle 1s, possible wedge, escalation 3, demand-deep-inspection: same pane has wedge-escalated 3 times in a row - do not re-absorb on the run-step/pane state alone)
+
+--- and then the long bounded recheck the absorb still owes
+no settled-wait record exists: this watcher has no bounded recheck for a
+held lane at all, which is why the rounds above keep escalating instead.
+=== end of transcript ===
