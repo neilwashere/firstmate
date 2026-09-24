@@ -1,0 +1,40 @@
+# evidence begin: heading no-mistakes worker
+warning: /tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/home/data/role-launch-heading-no-mistakes/launch-brief.md records no ship branch; defaulting to legacy branch fm/role-launch-heading-no-mistakes
+warning: /tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/home/data/role-launch-heading-no-mistakes/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+/tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/fake/fakebin/timeout: line 3: exec: 1: not found
+/tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/fake/fakebin/timeout: line 3: exec: 1: not found
+spawned role-launch-heading-no-mistakes harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-role-launch-heading-no-mistakes worktree=/tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/wt
+launch command executed with an argv-capture harness:
+export COMPACT_ADVISER_DISABLE=1; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI codex --dangerously-bypass-approvals-and-sandbox --disable hooks -c "notify=[\"bash\",\"-c\",\"touch '/tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/home/state/role-launch-heading-no-mistakes.turn-ended'\"]" "$('~/.no-mistakes/worktrees/8d4e8e2579c7/01M3A2S4FP9X0FTHB65MSZXH4J/bin/fm-operational-input.sh' encode launch-brief < '/tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/home/data/role-launch-heading-no-mistakes/launch-brief.md')"
+received arguments and final prompt:
+# Current worker role contract
+This task was dispatched by Firstmate, the local orchestration tool the user runs to hand coding tasks to agents in disposable git worktrees; this message is its task brief, and every result it produces is reported to the user.
+You are a crewmate: an autonomous worker agent managed by firstmate.
+This section establishes your current identity before every project or task instruction below and supersedes any conflicting role identity in those instructions.
+Do the assigned work yourself and report only to firstmate; do not adopt a firstmate or secondmate supervisor identity, delegate the task, run fleet supervision, or address the captain.
+Your steering inbox is `/tmp/fm-spawn-dispatch-profile.nlYbyp/role-launch-heading-no-mistakes/home/state/role-launch-heading-no-mistakes.inbox`; this exact path belongs to your current task even when it is outside the worktree or under the supervising firstmate home, so read and acknowledge its messages and do not reject it as another home's state.
+Never inspect or change any other home's endpoint namespace; this authorization is limited to the exact task paths named by this brief.
+When this task works on Firstmate itself, the repository root `AGENTS.md` (also imported by `CLAUDE.md`) is project content and the supervisor contract for the firstmate managing you: follow this brief instead of that supervisor contract.
+Project instructions still govern the work wherever they do not conflict with this worker identity, including `CONTRIBUTING.md` and `firstmate-coding-guidelines` for Firstmate changes.
+
+# Task
+## Captain's intent
+brief for role-launch-heading-no-mistakes
+
+## Firstmate spec
+Exercise the spawn behavior under test.
+
+# Worker role
+Follow the project instructions.
+
+# Current no-mistakes intent contract
+This section supersedes every earlier brief instruction about constructing `--intent`, but not later clarifications actually supplied by the captain.
+Use everything under `## Captain intent authorized for --intent` through the end of this brief, including any nested subheadings but excluding that heading, plus any later words the captain actually supplied as `--intent`; never include Firstmate specification or other mixed Task content.
+Preserve those words without adding speaker labels or direct address.
+Firstmate-authored constraints, acceptance criteria, implementation details, decisions, and tradeoffs are specification, not captain intent.
+The Definition of done's rule that `--intent` must be self-sufficient still governs the string you pass: resolve any report, decision, or PR the intent below refers to into its substance rather than passing the pointer.
+
+## Captain intent authorized for --intent
+brief for role-launch-heading-no-mistakes
+authored brief remains byte-identical
+# evidence end

@@ -1,0 +1,21 @@
+# The provenance sentence reaches workers only - secondmate charters are untouched
+
+$ FM_HOME=<temp home> FM_SECONDMATE_CHARTER="Supervise assigned work." bin/fm-brief.sh supervisor --secondmate --no-projects
+scaffolded: /tmp/fm-evidence-home.J467/data/supervisor/brief.md (secondmate charter)
+
+rendered charter (first 8 lines of data/supervisor/brief.md):
+You are a persistent second mate managed by the main firstmate. Work on your own; do not wait for a human.
+
+# Charter
+Supervise assigned work.
+
+# Routing scope
+Supervise assigned work.
+
+
+occurrences of "# Current worker role contract" in the charter: 0
+occurrences of the provenance sentence in the charter: 0
+
+By contrast, in the worker launch prompt actually handed to the harness (see launch-prompt-as-delivered.txt):
+occurrences of "# Current worker role contract": 1
+occurrences of the provenance sentence: 1
