@@ -25,16 +25,17 @@ It takes `--source <name>` when the adapter knows the source natively, and other
 | --- | --- | --- |
 | `startup`, `new` | Full digest | This is a true session start that has not taken the helm; Pi CLI continuations are refined to `resume` by the adapter before reaching this boundary. |
 | `clear`, `compact` | `--reemit` after a proven complete startup, otherwise full digest | This process normally has the helm and lost only its context, but an earlier hook may have been truncated after acquiring the lock. |
-| `resume`, `reload`, `fork` | Delegate to the nudge wrapper | Prior context is restored, so re-running is redundant when the lock is still ours and an instruction is enough when a new process resumed an old session. |
+| `resume`, `reload`, `fork` | Full digest when the lock is free or stale; otherwise delegate to the nudge wrapper | A new process that resumed an old session with no live lock owner is usually an unattended restore (a Herdr server restart or a reboot relaunching each pane on its saved session), where no one is present to act on a nudge and no watcher can create a turn until the lock is taken. When the lock is still ours, re-running is redundant and the nudge stays silent; when another live session holds it, the nudge asks for a manual start. |
 | unreadable or unrecognized | Full digest | Taking the helm redundantly is cheap and idempotent; not taking it is the bug this tier exists to fix. |
 
 This deliberately inverts the previous nudge matcher, which fired on `startup|resume|clear` and excluded `compact`.
-Compaction is covered where a tracked adapter delivers that source because a compacted session has lost exactly the digest it needs, and resume is excluded from the run because it restores that digest instead of losing it.
+Compaction is covered where a tracked adapter delivers that source because a compacted session has lost exactly the digest it needs. Resume keeps its restored digest and runs a new one only when it must also take the helm, because no live session holds the lock.
 
 Current harness ownership of the lock and its matching `state/.session-start-complete` record together are the idempotency interlock for the whole scheme.
 The full digest clears that completion record after acquiring the lock and republishes the lock owner's pid only after every stage completes, so `clear` or `compact` cannot skip startup sweeps after a truncated run.
 `bin/fm-lock.sh` treats a lock owned through either the shared ancestry verdict or a trusted same-session Claude id as this session's own, so a proven `clear` or `compact` re-emit re-verifies ownership and proceeds, while a lock another live session took meanwhile still produces the ordinary read-only digest.
-On a run-tier harness only `resume`, `reload`, and `fork` are routed to the nudge wrapper, whose separate ancestry-only check normally stays silent when this process already holds the lock.
+On a run-tier harness only `resume`, `reload`, and `fork` with a live (or unclassifiable) lock holder are routed to the nudge wrapper, whose separate ancestry-only check normally stays silent when this process already holds the lock.
+On Pi, `.pi/extensions/fm-primary-pi-watch.ts` arms the watcher as soon as this session owns the lock, polling for a bounded window (`FM_PI_ARM_LOCK_POLL_MS`, `FM_PI_ARM_LOCK_WAIT_MS`) after `session_start`, so a restored primary resumes supervision with no model turn; it never takes the lock itself.
 After a background Claude helper-chain recycle breaks that ancestry, the wrapper may emit a redundant nudge even though the shared same-session verdict still owns the lock; the requested session start remains idempotent.
 
 `bin/fm-session-start.sh --reemit` owns which work a re-emit skips, its true-start AGENTS.md baseline, and its supported stale-instruction refresh pairs; its header is the single owner of those mechanics.
@@ -102,7 +103,7 @@ That alternative expands trust and writes outside this repository, so Firstmate 
 
 `tests/fm-sessionstart-nudge.test.sh` proves the nudge wrapper's silence for both gate signals, an unmarked linked worktree, a missing state directory, and an already-owned lock, plus its exact U+2063 `FIRSTMATE_OP:`-prefixed, `session-start`-typed one-line output.
 It separately proves the run wrapper's silence for the gate environment and an unmarked linked worktree, including the internal Pi prerequisite's explicit silent stand-down.
-It proves the run wrapper's source routing end to end against a real `fm-session-start.sh`, including completion-gated `--reemit` selection, resume delegation, Pi CLI continuation classification, an unrecognized source falling through to the full digest, and bounded loud delivery of an oversized Pi digest.
+It proves the run wrapper's source routing end to end against a real `fm-session-start.sh`, including completion-gated `--reemit` selection, resume taking the helm over a free or stale lock and delegating under a live owner, Pi CLI continuation classification, an unrecognized source falling through to the full digest, and bounded loud delivery of an oversized Pi digest.
 The same portable suite proves provider exclusion until settlement, exactly-one execution and context delivery, interruption, process-tree retirement, two rapid replacements, stale completion, eligible empty output, spawn error, wrapper timeout output, truncation, ineligible stand-down, and compaction cancellation through the extension's public event surface.
 `tests/fm-session-start.test.sh` proves the runtime bound through the forced pure-Bash fallback: a TERM-resistant digest that exceeds its budget is force-killed with its grandchild, still emits its completed stages, names the incomplete stage and every stage it never reached, leaves no completion proof, and exits 0.
 `tests/fm-pi-primary-live-e2e.test.sh` and `tests/fm-opencode-primary-live-e2e.test.sh` exercise native startup paths with first-message and later-message Ahoy regressions.
