@@ -75,8 +75,8 @@ A re-emit (`--reemit`) reprints the digest for a process that already has the he
 ### Change from the previous nudge matcher
 
 This routing deliberately inverts the previous nudge matcher, which fired on `startup|resume|clear` and excluded `compact`.
-Compaction is covered where a tracked adapter delivers that source because a compacted session has lost exactly the digest it needs. Resume keeps its restored digest and runs a new one only when it must also take the helm, because no live session holds the lock.
-
+Compaction is covered where a tracked adapter delivers that source because a compacted session has lost exactly the digest it needs.
+Resume keeps its restored digest and runs a new one only when it must also take the helm, because no live session holds the lock.
 On Pi, `.pi/extensions/fm-primary-pi-watch.ts` arms the watcher as soon as this session owns the lock, polling for a bounded window (`FM_PI_ARM_LOCK_POLL_MS`, `FM_PI_ARM_LOCK_WAIT_MS`) after `session_start`, so a restored primary resumes supervision with no model turn; it never takes the lock itself.
 After a background Claude helper-chain recycle breaks that ancestry, the wrapper may emit a redundant nudge even though the shared same-session verdict still owns the lock; the requested session start remains idempotent.
 
@@ -105,7 +105,7 @@ A lock another live session took meanwhile still produces the ordinary read-only
 
 ### Nudge wrapper on a run-tier harness
 
-On a run-tier harness, only `resume`, `reload`, and `fork` are routed to the nudge wrapper.
+On a run-tier harness, only `resume`, `reload`, and `fork` with a live or unclassifiable lock holder are routed to the nudge wrapper.
 The nudge wrapper has its own separate ancestry-only check, which normally stays silent when this process already holds the lock.
 A background Claude helper-chain recycle can break that ancestry.
 The wrapper may then emit a redundant nudge even though the shared same-session verdict still owns the lock.
@@ -431,6 +431,7 @@ It uses a TERM-resistant digest that exceeds its budget and proves that the dige
 - Exits 0.
 
 ### Native startup and Ahoy tests
+
 
 `tests/fm-pi-primary-live-e2e.test.sh` and `tests/fm-opencode-primary-live-e2e.test.sh` exercise native startup paths with first-message and later-message Ahoy regressions.
 
