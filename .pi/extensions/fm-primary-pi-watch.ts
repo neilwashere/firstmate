@@ -769,7 +769,9 @@ export default function (pi: ExtensionAPI) {
         try {
           await branchDelivery;
           return true;
-        } catch {}
+        } catch {
+          return await sendWake(owner, message, pending);
+        }
       }
     }
     return await sendWake(owner, message, pending);
@@ -1146,6 +1148,11 @@ export default function (pi: ExtensionAPI) {
         enqueuePendingActionable(owner, pending);
         if (!generationIsLive(owner)) return;
         owner.retryFailures = 0;
+        // A later verified close restores its successor while an earlier wake
+        // delivery is pending; only delivery of the queued wake waits.
+        if (owner.restoring && verified && !armRetired.has(armChild) && !liveArmChild(owner) && !owner.retryTimer) {
+          startArm(owner, predecessor);
+        }
         void processPendingActionables(owner);
         return;
       }
