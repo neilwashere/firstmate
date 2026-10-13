@@ -1064,6 +1064,14 @@ entries.push({ type: "message", message: { role: "user", content: operational.st
 const unsolicitedPrompt = "Please keep responses concise while monitoring the fleet.";
 await fire("before_agent_start", { prompt: unsolicitedPrompt }, mainCtx);
 entries.push({ type: "message", message: { role: "user", content: unsolicitedPrompt } });
+// A run opened by pi.sendMessage(..., { triggerTurn: true }) raises
+// before_agent_start with the custom message and no prompt. Even when it
+// carries request wording, it is not the captain speaking.
+await fire("before_agent_start", {
+  type: "before_agent_start",
+  messageType: "custom",
+  message: { role: "custom", customType: "fixture", content: explicitRequest, display: false, timestamp: Date.now() },
+}, mainCtx);
 await fire("agent_start", {}, mainCtx);
 await fire("agent_end", {}, mainCtx);
 const legacyOperational = "⁣FIRSTMATE_OP: give me a fresh system-resource report.";
@@ -1121,9 +1129,10 @@ for (const content of [unsolicitedPrompt, ...requestedPrompts]) {
   if (copies !== 1) throw new Error(`current captain prompt was mirrored ${copies} times instead of once`);
 }
 if (mirroredCaptainText.some((text) =>
+  text === `[captain] ${explicitRequest}` ||
   text.includes("operational watcher injection") || text.includes("FIRSTMATE_OP: give me a fresh system-resource report")
 )) {
-  throw new Error("canonical current or legacy operational input entered captain mirror context");
+  throw new Error("operational input or a custom-message run entered captain mirror context");
 }
 if ((globalThis.__fmPrompts ?? []).length !== 5) throw new Error("a handled fleet wake was rerun");
 let processingRequests = sentToMain.filter((sent) => sent.message.customType === "fm-branch-process");

@@ -2412,6 +2412,26 @@ ok - under the away-posture record the wake carries the verbatim read-back tail,
 
 The merge suite and the security suite dominate the wall time.
 
+### 2026-10-13 custom-message runs without a prompt
+
+Pi 1.2.0 raises `before_agent_start` for a run opened by `pi.sendMessage(..., { triggerTurn: true })` with the custom message and no `prompt`; Pi 1.1.0 raises nothing for that run.
+Both Pi extensions now ignore a prompt-less `before_agent_start`, which keeps Pi 1.1.0 behavior on both releases.
+The strict typecheck and the branch and watcher suites were run on Linux, Node v24.18.0, with TypeScript 5.9.3 and 7.0.2, against npm `@earendil-works/pi-coding-agent` 1.1.0 and 1.2.0 selected with `FM_PI_PACKAGE_DIR`.
+No provider credentials were present and no provider call was made.
+
+```sh
+FM_PI_PACKAGE_DIR=<pi-1.1.0-or-1.2.0-package> bin/fm-test-run.sh tests/fm-pi-primary-types.test.sh tests/fm-pi-branch-extension.test.sh tests/fm-pi-watch-extension.test.sh
+```
+
+```text
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.1.0
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 1.2.0
+```
+
+The branch suite passed 51 checks and the watcher suite 61 checks against each release.
+Before the guard, Pi 1.2.0 failed the typecheck with `TS2339: Property 'prompt' does not exist on type 'BeforeAgentStartCustomEvent'` in both extensions, and the branch suite's custom-message case failed with `TypeError: Cannot read properties of undefined (reading 'trim')`.
+The real Pi 1.2.0 CLI in RPC mode, with only a local faux provider, reported the same `before_agent_start` extension error for a custom-message run before the guard and none after it.
+
 ## Native Codex through Pi
 
 Verified on 2026-09-08 with Pi 0.85.1 and the installed `pi-codex-native` 0.2.1 adapter.

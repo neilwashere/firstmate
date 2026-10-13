@@ -1209,6 +1209,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on?.("before_agent_start", (event) => {
+    // A run opened by a custom message carries no prompt, so it cannot consume a wake.
+    if (!("prompt" in event)) return;
     consumeWake(generation, event.prompt);
   });
   pi.on?.("message_start", (event) => {
