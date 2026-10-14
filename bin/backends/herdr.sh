@@ -3123,14 +3123,36 @@ fm_backend_herdr_send_key() {  # <target> <key>
 # instead, so they need no line count at all). Workaround:
 # always request a generous fetch far above any realistic viewport height, then
 # trim to the caller's requested bound ourselves with `tail`.
+#
+# The read is always `--format ansi`, reduced to plain text locally. Since
+# Herdr 0.8.0 a TEXT-format recent read asking for more lines than the screen
+# holds, on an idle recognized agent drawing the alternate screen with mouse
+# reporting, is Herdr's "alternate-screen history read": Herdr injects real
+# wheel-up events into the agent to page its transcript, then wheel-down
+# events to return it. A fullscreen Pi pane visibly scrolls and shows its
+# "Jump to latest message" label on every such read, and the watcher reads
+# every idle worker each poll. Herdr documents ANSI reads as passive, so this
+# capture never moves an application's viewport; an alternate-screen agent
+# yields its screen and a normal-screen pane still yields host scrollback.
 fm_backend_herdr_capture() {  # <target> <lines>
   fm_backend_herdr_target_ready "$1" || return 1
   local lines=${2:-200} fetch out
   case "$lines" in ''|*[!0-9]*) lines=200 ;; esac
   fetch=$lines
   case "$fetch" in ''|*[!0-9]*) fetch=200 ;; *) [ "$fetch" -ge 200 ] || fetch=200 ;; esac
-  out=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane read "$FM_BACKEND_HERDR_PANE" --source recent --lines "$fetch" 2>/dev/null) || return 1
-  printf '%s' "$out" | tail -n "$lines"
+  out=$(fm_backend_herdr_cli "$FM_BACKEND_HERDR_SESSION" pane read "$FM_BACKEND_HERDR_PANE" --source recent --lines "$fetch" --format ansi 2>/dev/null) || return 1
+  printf '%s\n' "$out" | fm_backend_herdr_ansi_rows_to_text | tail -n "$lines"
+}
+
+# fm_backend_herdr_ansi_rows_to_text: reduce an ANSI pane read on stdin to the
+# rows the text-format read of the same screen returns: SGR and other CSI
+# sequences removed, the CR of each CRLF row ending dropped, trailing spaces
+# trimmed from every row, and trailing blank rows removed so a bounded tail
+# still ends at the last drawn row.
+fm_backend_herdr_ansi_rows_to_text() {
+  fm_composer_strip_ansi \
+    | LC_ALL=C sed -e 's/\r$//' -e 's/[[:space:]]*$//' \
+    | awk '{ rows[NR] = $0 } $0 != "" { last = NR } END { for (i = 1; i <= last; i++) print rows[i] }'
 }
 
 # fm_backend_herdr_visible_capture: the visible viewport only. `--source
