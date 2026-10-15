@@ -74,8 +74,10 @@ test_only_upstream_requires_attestation() {
     fail "the attestation job lost its existing bot exemption"
   grep -Fq "github.event.pull_request.user.login != 'dependabot[bot]'" "$WORKFLOW" ||
     fail "the attestation job lost its existing dependabot exemption"
-  grep -Fq 'uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@' "$WORKFLOW" ||
+  grep -Fq 'uses: "kunchenguid/no-mistakes/.github/actions/' "$WORKFLOW" ||
     fail "the upstream attestation action was removed"
+  grep -Fq 'require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970' "$WORKFLOW" ||
+    fail "the upstream attestation action lost its pinned version"
   pass "only upstream requires the pinned no-mistakes attestation"
 }
 
