@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Regression test for the fm-spawn.sh treehouse-get worktree-detection settle
-# loop (bin/fm-spawn.sh, the `for _ in $(seq 1 60)` loop after `treehouse get`).
+# Regression tests for fm-spawn.sh Treehouse producer outcomes and its
+# endpoint cwd-confirmation loop after a durable allocation.
 #
 # On some tmux/WSL setups a brand-new window's pane_current_path transiently
 # reports a stale, unrelated-but-real path on the very first poll, before the
-# pane actually settles into the worktree treehouse get moved it to. That stale
+# pane settles into the copy named by the Treehouse lease. That stale
 # path still passes the loop's "differs from the project" check and
 # validate_spawn_worktree's "is a real, distinct worktree" check (it IS a real
 # git checkout, just the wrong one), so a naive single-read loop silently
@@ -13,9 +13,9 @@
 # asserts the recorded worktree resolves to the real, settled worktree, never
 # the stale first read.
 #
-# The same loop has a second transient to survive: `treehouse get` reports the
-# REPOSITORY's primary checkout as its own cwd while it is still preparing a
-# slot. From a linked spawning home that path is not the project, so a poll
+# The same loop has a second transient to survive: a pane may report the
+# REPOSITORY's primary checkout while handoff to the leased copy is pending.
+# From a linked spawning home that path is not the project, so a poll
 # comparing only against the project adopted it and the isolation guard then
 # refused the launch. The cases below cover both the transient and the pane
 # that never leaves the primary at all.
@@ -61,7 +61,25 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  fm_fake_exit0 "$fakebin" treehouse
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "$*" in
+  'get --lease --lease-holder '* )
+    if [ "${FM_FAKE_TREEHOUSE_FAIL:-0}" = 1 ]; then
+      printf 'all 1 worktrees are in use or dirty (max_trees = 1)\n' >&2
+      exit 1
+    fi
+    printf '{"path":"%s","lease_id":"fixture-lease","lease_holder":"fixture"}\n' "$FM_FAKE_TREEHOUSE_PATH"
+    if [ "${FM_FAKE_TREEHOUSE_PARTIAL_FAIL:-0}" = 1 ]; then
+      printf 'post_create hook failed\n' >&2
+      exit 23
+    fi
+    ;;
+  *) printf 'unexpected Treehouse acquisition: %s\n' "$*" >&2; exit 2 ;;
+esac
+SH
+  chmod +x "$fakebin/treehouse"
   printf '%s\n' "$fakebin"
 }
 
@@ -108,7 +126,7 @@ run_settle_spawn() {
     FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
     FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
     FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" \
-    FM_FAKE_PANE_PATH="$WT_DIR" FM_FAKE_PANE_STALE="$STALE_DIR" \
+    FM_FAKE_TREEHOUSE_PATH="$WT_DIR" FM_FAKE_PANE_PATH="$WT_DIR" FM_FAKE_PANE_STALE="$STALE_DIR" \
     FM_FAKE_PANE_STALE_READS="$STALE_READS" FM_FAKE_PANE_COUNTFILE="$COUNTFILE" \
     PATH="$FAKEBIN_DIR:$PATH" \
     "$SPAWN" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off 2>&1
@@ -180,7 +198,7 @@ make_primary_case() {
 }
 
 # The exact incident: the pane reports the repository primary for the first
-# reads, then settles into the slot treehouse actually created. The primary must
+# reads, then settles into the slot named by Treehouse's lease. The primary must
 # never be adopted as the worktree, so the spawn lands on the settled slot.
 test_transient_primary_checkout_is_not_accepted() {
   local rec id out status
@@ -211,8 +229,8 @@ test_primary_checkout_that_never_settles_fails_at_the_deadline() {
   out=$(run_settle_spawn "$id")
   status=$?
   [ "$status" -ne 0 ] || fail "spawn accepted a pane that never left the primary checkout"$'\n'"$out"
-  assert_contains "$out" "did not enter an isolated worktree" \
-    "spawn did not explain that the pane never reached an isolated worktree"
+  assert_contains "$out" "did not confirm that cwd within 60s" \
+    "spawn did not distinguish the successful allocation from the failed handoff"
   assert_contains "$out" "$STALE_DIR" \
     "the refusal did not name the path the pane kept reporting"
   assert_contains "$out" "repository's primary checkout" \
@@ -221,9 +239,69 @@ test_primary_checkout_that_never_settles_fails_at_the_deadline() {
   pass "a pane stuck on the primary checkout fails loudly at the deadline"
 }
 
+test_capacity_refusal_keeps_producer_evidence_and_starts_no_worker() {
+  local rec id out status
+  id=settle-refusal-z5
+  rec=$(make_primary_case settle-refusal "$id" 100000)
+  read_settle_record "$rec"
+  fm_test_fake_sleep_noop "$FAKEBIN_DIR"
+  out=$(FM_FAKE_TREEHOUSE_FAIL=1 run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "capacity refusal unexpectedly launched a worker"
+  assert_contains "$out" "Treehouse refused allocation" "capacity refusal was hidden by a cwd timeout"
+  assert_not_contains "$out" "within 60s" "capacity refusal waited on cwd"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "refused spawn published metadata"
+  [ ! -e "$COUNTFILE" ] || fail "refused spawn polled pane cwd"
+  assert_grep 'max_trees = 1' "$HOME_DIR/data/$id/placement-attempt/stderr" "producer stderr was lost"
+  assert_grep 'exit=1' "$HOME_DIR/data/$id/placement-attempt/result" "producer status was lost"
+  if out=$(run_settle_spawn "$id"); then
+    fail "a retry allocated again despite the unresolved attempt"
+  fi
+  assert_contains "$out" "placement-attempt" "retry did not name the held evidence"
+  [ ! -e "$COUNTFILE" ] || fail "retry polled pane cwd"
+  pass "producer refusal retains attempt binding and refuses a blind second allocation"
+}
+
+test_producer_failure_with_partial_allocation_keeps_identity() {
+  local rec id out status
+  id=settle-partial-z7
+  rec=$(make_primary_case settle-partial "$id" 100000)
+  read_settle_record "$rec"
+  out=$(FM_FAKE_TREEHOUSE_PARTIAL_FAIL=1 run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "a failed producer unexpectedly launched a worker"
+  assert_contains "$out" "Treehouse acquisition failed" "hook failure was mistaken for capacity"
+  assert_contains "$out" "fixture-lease" "partial allocation lost its lease identity"
+  assert_grep 'post_create hook failed' "$HOME_DIR/data/$id/placement-attempt/stderr" "hook error was lost"
+  assert_grep 'exit=23' "$HOME_DIR/data/$id/placement-attempt/result" "producer exit was lost"
+  [ ! -e "$COUNTFILE" ] || fail "failed producer polled pane cwd"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "failed producer published task metadata"
+  pass "producer failure preserves partial allocation identity and its actual exit status"
+}
+
+test_allocated_copy_with_failed_handoff_keeps_lease_identity() {
+  local rec id out status
+  id=settle-handoff-z6
+  rec=$(make_primary_case settle-handoff "$id" 100000)
+  read_settle_record "$rec"
+  fm_test_fake_sleep_noop "$FAKEBIN_DIR"
+  out=$(run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "failed cwd handoff unexpectedly launched a worker"
+  assert_contains "$out" "fixture-lease" "failed handoff lost lease identity"
+  assert_contains "$out" "$WT_DIR" "failed handoff lost acquired copy path"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "failed handoff published task metadata"
+  assert_grep 'fixture-lease' "$HOME_DIR/data/$id/placement-attempt/stdout" "partial allocation output was lost"
+  assert_grep 'exit=0' "$HOME_DIR/data/$id/placement-attempt/result" "successful producer exit was lost"
+  pass "successful allocation with failed cwd handoff preserves copy and lease identity"
+}
+
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_read
 test_transient_primary_checkout_is_not_accepted
 test_primary_checkout_that_never_settles_fails_at_the_deadline
+test_capacity_refusal_keeps_producer_evidence_and_starts_no_worker
+test_producer_failure_with_partial_allocation_keeps_identity
+test_allocated_copy_with_failed_handoff_keeps_lease_identity
 
 echo "# all fm-spawn-worktree-settle tests passed"
