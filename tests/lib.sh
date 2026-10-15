@@ -428,8 +428,10 @@ fm_live_gate() {
 #
 # fm_fakebin <dir> creates <dir>/fakebin and echoes it; prepend it to PATH to
 # shadow real tools with stubs. fm_fake_exit0 drops trivial exit-0 stubs for the
-# named tools into a fakebin dir. fm_fake_crash_injector drops the shim a fake
-# uses to crash the process under test deterministically. fm_fake_version_tool
+# named tools into a fakebin dir. The Treehouse fake additionally answers a
+# lease acquire with the fixture pane's path and an identity; other calls stay
+# exit-0 no-ops. fm_fake_crash_injector drops the shim a fake uses to crash the
+# process under test deterministically. fm_fake_version_tool
 # drops a stub for a tool whose installed version bootstrap gates, so a fixture
 # cannot be reported as an unparseable build simply for answering `--version`
 # with nothing.
@@ -449,6 +451,17 @@ fm_fake_exit0() {
 exit 0
 SH
     chmod +x "$fakebin/$tool"
+    if [ "$tool" = treehouse ]; then
+      cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = get ] && [ "${2:-}" = --lease ]; then
+  path=${FM_FAKE_TREEHOUSE_PATH:-${FM_FAKE_PANE_PATH:-}}
+  [ -n "$path" ] || exit 0
+  printf '{"path":"%s","lease_id":"fixture-lease","lease_holder":"fixture"}\n' "$path"
+fi
+SH
+      chmod +x "$fakebin/treehouse"
+    fi
   done
 }
 
