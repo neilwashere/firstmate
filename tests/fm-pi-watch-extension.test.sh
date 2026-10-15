@@ -485,6 +485,142 @@ EOF
   pass "Pi actionable close starts one successor before wake delivery settles"
 }
 
+test_pi_later_actionable_close_rearms_during_branch_settlement() {
+  local mode repo home plugin log stop release out status
+  for mode in accepted rejected no-acceptor; do
+    repo="$TMP_ROOT/pi-queued-close-$mode-root"
+    home="$TMP_ROOT/pi-queued-close-$mode-home"
+    log="$TMP_ROOT/pi-queued-close-$mode.log"
+    stop="$TMP_ROOT/pi-queued-close-$mode.stop"
+    release="$TMP_ROOT/pi-queued-close-$mode.release"
+    mkdir -p "$repo/bin" "$home/state" "$home/config"
+    install_pi_watch_extension_fixture "$repo"
+    plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+    cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ] && kill -0 "$FM_WATCH_PREDECESSOR_ARM_PID" 2>/dev/null; then
+  printf 'overlap predecessor=%s\n' "$FM_WATCH_PREDECESSOR_ARM_PID" >> "${FM_ARM_LOG:?}"
+  exit 1
+fi
+printf 'arm=%s predecessor=%s\n' "$$" "${FM_WATCH_PREDECESSOR_ARM_PID:-none}" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+if [ "$count" -eq 1 ]; then
+  printf 'signal: a.status\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  while [ ! -e "$FM_RELEASE_FILE" ]; do sleep 0.01; done
+  printf 'signal: b.status\n'
+  exit 0
+fi
+trap 'exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+    chmod +x "$repo/bin/fm-watch-arm.sh"
+    out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_RELEASE_FILE="$release" FM_SCENARIO="$mode" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const branchHandler = process.env.FM_SCENARIO !== "no-acceptor";
+const rejected = process.env.FM_SCENARIO === "rejected";
+const offers = [];
+const prompts = [];
+let tool = null;
+let releaseFirst = () => {};
+let firstSettled = false;
+const firstSettlement = new Promise((resolve, reject) => {
+  releaseFirst = () => {
+    firstSettled = true;
+    if (rejected) reject(new Error("branch declined after accepting"));
+    else resolve();
+  };
+});
+const handlers = new Map();
+const bus = {
+  on(channel, handler) {
+    handlers.set(channel, [...(handlers.get(channel) ?? []), handler]);
+    return () => {};
+  },
+  emit(channel, data) {
+    for (const handler of handlers.get(channel) ?? []) handler(data);
+  },
+};
+if (branchHandler) {
+  bus.on("fm-branch-supervision:dispatch", (offer) => {
+    const reason = offer.message.match(/signal: [ab]\.status/)?.[0];
+    offers.push(reason);
+    offer.accept(reason === "signal: a.status" ? firstSettlement : Promise.resolve());
+    if (reason === "signal: a.status") writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
+  });
+}
+const pi = {
+  on() {},
+  events: bus,
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async (message) => {
+    prompts.push(message);
+    if (!branchHandler && prompts.length === 1) writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
+  },
+};
+const rows = () => existsSync(process.env.FM_ARM_LOG) ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n") : [];
+const armRows = () => rows().filter((row) => row.startsWith("arm="));
+async function waitFor(predicate, description) {
+  for (let i = 0; i < 400; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`${description}: ${rows().join(" | ")}; offers=${offers.join(",")}; prompts=${prompts.length}`);
+}
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+for (const name of ["a", "b"]) {
+  writeFileSync(`${process.env.FM_HOME}/state/${name}.meta`, `project=/projects/approved\nwindow=fm-${name}\n`);
+}
+writeFileSync(`${process.env.FM_HOME}/state/.wake-queue`, "1\t1\tsignal\ta.status\tsignal: a.status\n2\t2\tsignal\tb.status\tsignal: b.status\n");
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("tool-call-first", {}, undefined, undefined, {});
+await waitFor(() => (branchHandler ? offers.length === 1 : prompts.length === 1), "first wake was not handed off");
+await waitFor(() => armRows().length === 3, "later close did not start its successor");
+if (rows().some((row) => row.startsWith("overlap "))) throw new Error(`arm cycles overlapped: ${rows().join(" | ")}`);
+if (branchHandler && (firstSettled || offers.length !== 1 || prompts.length !== 0)) {
+  throw new Error(`later wake delivered before first settlement: ${offers.join(",")} / ${prompts.length}`);
+}
+const redundant = await tool.execute("tool-call-during-settlement", {}, undefined, undefined, {});
+if (!redundant.content[0].text.includes("watcher: unchanged")) {
+  throw new Error(`repair did not observe the already-running successor: ${redundant.content[0].text}`);
+}
+if (branchHandler) releaseFirst();
+await waitFor(() => (branchHandler ? offers.length === 2 : prompts.length === 2), "later wake was not delivered");
+await new Promise((resolve) => setTimeout(resolve, 100));
+if (armRows().length !== 3 || rows().filter((row) => row.startsWith("confirmed ")).length !== 2) {
+  throw new Error(`successors or confirmations duplicated: ${rows().join(" | ")}`);
+}
+if (branchHandler) {
+  if (offers.join(",") !== "signal: a.status,signal: b.status" ||
+      (rejected ? prompts.length !== 1 || !prompts[0].includes("signal: a.status") : prompts.length !== 0)) {
+    throw new Error(`branch delivery lost order or main fallback: ${offers.join(",")} / ${prompts.join(" | ")}`);
+  }
+} else if (!prompts[0].includes("signal: a.status") || !prompts[1].includes("signal: b.status")) {
+  throw new Error(`main fallback lost order: ${prompts.join(" | ")}`);
+}
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+)
+    status=$?
+    expect_code 0 "$status" "Pi later close must restore monitoring before branch settlement ($mode): $out"
+    [ -z "$out" ] || fail "Pi queued-close test printed output ($mode): $out"
+  done
+  pass "Pi later actionable close re-arms before branch settlement and preserves ordered delivery and main fallback"
+}
+
 # The arm child can publish its complete actionable line before its process
 # closes while the watcher finishes durable cleanup. The still-open predecessor
 # must never be mistaken for the successor merely because its readiness promise
@@ -3264,6 +3400,9 @@ trap cleanup EXIT
 trap 'exit 0' TERM INT
 printf 'arm pid=%s marker=%s\n' "$$" "$marker" >> "${FM_ARM_LOG:?}"
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=replacement-fixture\n' "$$"
+if [ -n "${FM_FIXTURE_PRIOR_ARM_PID:-}" ]; then
+  kill -TERM "$FM_FIXTURE_PRIOR_ARM_PID"
+fi
 while :; do
   if [ -e "$FM_TRIGGER_FILE" ]; then
     outcome=$(cat "$FM_TRIGGER_FILE")
@@ -3372,10 +3511,14 @@ if (previous.prompts.length !== 0) {
 }
 await waitFor(() => liveArms().length === 1 && armRows().length >= 2, "old-session successor");
 writeFileSync(process.env.FM_TRIGGER_FILE, "replacement-successor actionable outcome\n");
-await waitFor(() => liveArms().length === 0, "mid-delivery successor actionable close");
+await waitFor(() => liveArms().length === 1 && armRows().length >= 3, "mid-delivery successor's replacement");
+const oldSuccessorPid = liveArms()[0].pid;
 
 await previous.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
-await waitFor(() => liveArms().length === 0, "retired old-session successor");
+if (liveArms().length !== 1 || liveArms()[0].pid !== oldSuccessorPid) {
+  throw new Error("session handoff did not preserve the established successor");
+}
+process.env.FM_FIXTURE_PRIOR_ARM_PID = oldSuccessorPid;
 
 const replacement = makePi(false);
 const replacementMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?replacement=durable-handoff`);
@@ -3386,7 +3529,7 @@ const replacementStart = replacement.handlers.get("session_start")?.({
   previousSessionFile: "/tmp/previous.jsonl",
 }, {});
 await new Promise((resolve) => setTimeout(resolve, 50));
-await waitFor(() => liveArms().length === 1 && armRows().length >= 3, "replacement arm before old delivery settlement");
+await waitFor(() => liveArms().length === 1 && armRows().length >= 4 && liveArms()[0].pid !== oldSuccessorPid, "replacement arm before old delivery settlement");
 if (replacement.prompts.some((message) => message.includes("signal: replacement-race actionable outcome"))) {
   throw new Error(`replacement raced the accepted old-session delivery: ${replacement.prompts.join(" | ")}`);
 }
@@ -3413,7 +3556,7 @@ await new Promise((resolve) => setTimeout(resolve, 700));
 if (replacement.prompts.filter((message) => message.includes("could not clear a delivered replacement-session actionable wake")).length !== 1) {
   throw new Error(`persistent handoff cleanup failure repeated alerts: ${replacement.prompts.join(" | ")}`);
 }
-await waitFor(() => liveArms().length === 1 && armRows().length >= 3, "replacement live arm");
+await waitFor(() => liveArms().length === 1 && armRows().length >= 4, "replacement live arm");
 const redundant = await replacement.getTool().execute("replacement-redundant", {}, undefined, undefined, {});
 if (!redundant.details?.ok || !String(redundant.details.message).includes("unchanged")) {
   throw new Error(`replacement did not retain automatic arm ownership: ${JSON.stringify(redundant.details)}`);
@@ -3428,7 +3571,7 @@ process.exit(0);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi session replacement must auto-arm and carry an in-flight actionable close"
+  expect_code 0 "$status" "Pi session replacement must auto-arm and carry an in-flight actionable close: $out"
   [ -z "$out" ] || fail "Pi session-replacement handoff test printed output: $out"
   pass "Pi session replacement auto-arms and carries its in-flight actionable close"
 }
@@ -5247,6 +5390,7 @@ test_pi_arms_when_session_start_takes_the_lock_later
 test_pi_redundant_tool_call_is_owned_noop
 test_pi_scheduled_retry_call_is_owned_noop
 test_pi_actionable_close_starts_single_successor_before_delivery
+test_pi_later_actionable_close_rearms_during_branch_settlement
 test_pi_actionable_output_waits_for_predecessor_close
 test_pi_branch_offer_owns_actionable_wake
 test_pi_branch_offer_flags_heartbeat
