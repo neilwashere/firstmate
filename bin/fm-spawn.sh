@@ -2592,7 +2592,7 @@ muse_credential_present() {
 # stopped pane's registration. Neither path passes a missing session file to
 # Pi, whose --session may otherwise create one at the named path.
 relaunch_resume_args() {  # <harness> <backend> <target>
-  local harness=${1-} backend=${2-} target=${3-} identity= agent ref flag root proof
+  local harness=${1-} backend=${2-} target=${3-} identity='' agent ref flag root proof
   [ "$backend" = herdr ] || return 0
   [ -n "$target" ] || return 0
   fm_backend_herdr_parse_target "$target" || return 1
