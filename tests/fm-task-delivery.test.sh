@@ -70,6 +70,36 @@ run_spawn() {  # <home> <fakebin> <spawn-args...>
     "$SPAWN" "$@" 2>&1
 }
 
+# A dense Firstmate spec is a warning, never a refusal: the spawn proceeds and the
+# warning names the token so the author can rewrite the spec before the worker reads it.
+test_spawn_warns_about_a_dense_firstmate_spec() {
+  local rec home proj fakebin out
+  rec=$(make_home dense-spec)
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+  FM_HOME="$home" "$BRIEF" dense-spec-a1 proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "dense-spec brief should scaffold"
+  fill_brief_subsections "$home/data/dense-spec-a1/brief.md" 'Keep it plain.' 'Budget 2spentmax4 unchanged.'
+  out=$(run_spawn "$home" "$fakebin" dense-spec-a1 "$proj" claude --mode no-mistakes --yolo off)
+  assert_contains "$out" "warning: ## Firstmate spec contains the run-together token '2spentmax4'" \
+    "a dense Firstmate spec did not produce a warning naming the token"
+  assert_present "$home/data/dense-spec-a1/launch-brief.md" "a dense Firstmate spec stopped the spawn"
+
+  FM_HOME="$home" "$BRIEF" dense-spec-a2 proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "plain-spec brief should scaffold"
+  fill_brief_subsections "$home/data/dense-spec-a2/brief.md" 'Keep it plain.' 'Budget two of four rounds, see https://github.com/x/y/pull/11.'
+  out=$(run_spawn "$home" "$fakebin" dense-spec-a2 "$proj" claude --mode no-mistakes --yolo off)
+  assert_not_contains "$out" "run-together" "a plain Firstmate spec produced a dense-text warning"
+
+  FM_HOME="$home" "$BRIEF" dense-spec-a3 proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "dense-intent brief should scaffold"
+  fill_brief_subsections "$home/data/dense-spec-a3/brief.md" 'The captain wrote 2spentmax4 here.' 'Plain build instructions.'
+  out=$(run_spawn "$home" "$fakebin" dense-spec-a3 "$proj" claude --mode no-mistakes --yolo off)
+  assert_not_contains "$out" "run-together" "the captain's intent was linted as if firstmate wrote it"
+  pass "fm-spawn: a run-together token in the Firstmate spec warns without stopping the spawn"
+}
+
 # A ship spawn must stop when its delivery contract was never decided or cannot be
 # a task mode, and must leave no task metadata behind when it does.
 test_ship_spawn_requires_a_valid_delivery_contract() {
@@ -1626,6 +1656,7 @@ EOF
 
 test_ship_spawn_requires_a_valid_delivery_contract
 test_scout_and_secondmate_refuse_delivery_flags
+test_spawn_warns_about_a_dense_firstmate_spec
 test_spawn_refuses_a_brief_mode_mismatch
 test_spawn_notices_a_rigor_downgrade_against_the_registry
 test_scout_records_no_delivery_posture

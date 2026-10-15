@@ -641,6 +641,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-dod-lib.sh
 . "$SCRIPT_DIR/fm-dod-lib.sh"
+# shellcheck source=bin/fm-prose-lib.sh
+. "$SCRIPT_DIR/fm-prose-lib.sh"
 # shellcheck source=bin/fm-trace-context-lib.sh
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
@@ -3098,6 +3100,10 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   if ADDRESS_LINE=$(fm_brief_intent_address_line "$BRIEF"); then
     echo "error: $BRIEF ## Captain's intent has an operator-address line: $ADDRESS_LINE; write the captain's actual words without a Captain label or address before spawn, since the heading already records provenance" >&2
     exit 1
+  fi
+  if fm_brief_task_heading_present "$BRIEF" "## Firstmate spec" &&
+    DENSE_SPEC_TOKEN=$(fm_prose_dense_token "$(fm_brief_task_heading_body "$BRIEF" "## Firstmate spec")"); then
+    echo "warning: ## Firstmate spec contains the run-together token '$DENSE_SPEC_TOKEN' in $BRIEF; the worker reads it literally, so rewrite it as plain prose with ordinary spaces (the spawn continues)" >&2
   fi
   if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
     if fm_brief_task_heading_present "$BRIEF" "## Captain's intent"; then
