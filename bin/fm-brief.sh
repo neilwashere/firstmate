@@ -581,6 +581,12 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
      get/return/remove/prune, the equivalent operations on any other worktree provider or runtime
      backend, and `git worktree add|remove|move|prune`. A slot that looks unused is not evidence
      that it is free, and returning your own worktree is firstmate's job at cleanup, not yours.
+     Private task-owned reviewer contexts are not fleet slots: provision them through the native
+     package-owned workspace helper when its current contract preserves a partial setup failure.
+     Finish through its receipt-validated non-deleting completion after mandatory custody; use
+     a new isolated root for the next round. Never treat that as permission to discard unique
+     evidence, product WIP, foreign registrations, or the allocated task worktree. If the native
+     helper cannot preserve these, report that concrete limitation instead of bypassing its protocol.
    If you genuinely need a second checkout, another slot, or the daemon touched, append
    `blocked [at=<epoch>]: {what you need}` and stop; firstmate arranges it.
 EOF

@@ -1426,6 +1426,12 @@ test_crewmate_scaffolds_forbid_pool_administration() {
       "$mode ship brief pinned one provider instead of covering every provider"
     assert_grep "sibling slot" "$brief" \
       "$mode ship brief did not forbid writing into a sibling slot"
+    assert_grep "task-owned reviewer contexts" "$brief" \
+      "$mode ship brief incorrectly makes the task's isolated review workspace a pool slot"
+    assert_grep "receipt-validated non-deleting completion" "$brief" \
+      "$mode ship brief did not permit native evidence-preserving review completion"
+    assert_grep "partial setup failure" "$brief" \
+      "$mode ship brief did not preserve partial setup evidence"
     # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
     assert_grep 'blocked [at=<epoch>]: {what you need}' "$brief" \
       "$mode ship brief gave the prohibition no exit for a genuine second-checkout need"
@@ -1435,6 +1441,8 @@ test_crewmate_scaffolds_forbid_pool_administration() {
     || fail "fm-brief.sh --scout exited non-zero"
   brief="$home/data/brief-pool-scout/brief.md"
   assert_grep "worktree pool" "$brief" "scout brief did not name the shared worktree pool"
+  assert_grep "task-owned reviewer contexts" "$brief" "scout brief forbids task-owned isolated review setup"
+  assert_grep "receipt-validated non-deleting completion" "$brief" "scout brief did not permit safe review completion"
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
   assert_grep 'blocked [at=<epoch>]: {what you need}' "$brief" "scout brief gave the prohibition no exit"
 

@@ -2587,22 +2587,43 @@ muse_credential_present() {
 # Prints the arguments with the single leading space that appends them to the
 # launch line, so an empty result leaves every other launch byte-identical.
 #
-# Only the Herdr backend is asked: it is the one adapter whose runtime records a
-# per-pane agent session, and on every other backend the pane carries no such
-# identity for a replacement to preserve. An unreadable registration - no
-# agent, a stale one, a malformed reference - degrades to that same
-# fresh-session launch rather than refusing, because nothing here is a safety
-# property; it preserves a display and supervision signal.
+# Only Herdr Pi sessions carry a resumable per-pane identity. A control
+# transaction supplies its pre-exit reference; a standalone relaunch reads the
+# stopped pane's registration. Neither path passes a missing session file to
+# Pi, whose --session may otherwise create one at the named path.
 relaunch_resume_args() {  # <harness> <backend> <target>
-  local harness=${1-} backend=${2-} target=${3-} identity agent ref flag
+  local harness=${1-} backend=${2-} target=${3-} identity='' agent ref flag root proof
   [ "$backend" = herdr ] || return 0
   [ -n "$target" ] || return 0
-  fm_backend_herdr_parse_target "$target" || return 0
-  identity=$(fm_backend_herdr_pane_agent_session_ref "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || return 0
-  agent=${identity%%$'\t'*}
-  ref=${identity#*$'\t'}
+  fm_backend_herdr_parse_target "$target" || return 1
+  if [ -n "${FM_CONTROL_PI_SESSION_FILE:-}" ]; then
+    [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ "$RELAUNCH" -eq 1 ] \
+      && [ "$(fm_meta_get "$STATE/$ID.control-relaunch" phase)" = launching ] \
+      && [ "$(fm_meta_get "$STATE/$ID.control-relaunch" relaunch_tx)" = "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+      && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+      || { echo "error: a Pi session selection needs its matching control transaction" >&2; return 1; }
+    ref=$FM_CONTROL_PI_SESSION_FILE
+    agent=pi
+  else
+    identity=$(fm_backend_herdr_pane_agent_session_ref "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || identity=
+    agent=${identity%%$'\t'*}
+    ref=${identity#*$'\t'}
+  fi
+  case "$RELAUNCH_PRIOR_HARNESS:$harness" in
+  pi:pi|pi:pi-signed|pi-signed:pi|pi-signed:pi-signed)
+    [ "$agent" = pi ] && [ -n "$ref" ] && [ "$ref" != "$identity" ] \
+      || { echo "error: task $ID has no original Pi session reference; refusing a fresh replacement" >&2; return 1; }
+    ;;
+  esac
   flag=$(fm_control_relaunch_resume_flag "$harness" "$agent") || return 0
-  [ -n "$flag" ] && [ -n "$ref" ] || return 0
+  [ -n "$flag" ] && [ -n "$ref" ] && [ "$ref" != "$identity" ] || return 0
+  root=${WORKER_ACCOUNT_ROOT:-${HOME:?HOME required for Pi session selection}/.pi/agent}
+  proof=$(fm_control_pi_session_file_validate "$ref" "$WT" "$root") \
+    || { echo "error: Pi session file is missing or does not match task $ID's worktree/account/header: $ref" >&2; return 1; }
+  if [ -n "${FM_CONTROL_PI_SESSION_FILE:-}" ]; then
+    [ "$proof" = "${FM_CONTROL_PI_SESSION_ID:-}"$'\t'"${FM_CONTROL_PI_SESSION_INODE:-}" ] \
+      || { echo "error: task $ID's pre-exit Pi session file identity changed before launch" >&2; return 1; }
+  fi
   printf -- ' %s %s' "$flag" "$(shell_quote "$ref")"
 }
 
@@ -5207,7 +5228,7 @@ LAUNCH=${LAUNCH//__EFFORTFLAG__/$EFFORTFLAG}
 # placeholder; an empty value leaves every other launch byte-identical.
 RESUME_ARGS=
 if [ "$RELAUNCH" -eq 1 ]; then
-  RESUME_ARGS=$(relaunch_resume_args "$HARNESS" "$BACKEND" "$T") || RESUME_ARGS=
+  RESUME_ARGS=$(relaunch_resume_args "$HARNESS" "$BACKEND" "$T") || exit 1
 fi
 LAUNCH=${LAUNCH//__PIRESUME__/$RESUME_ARGS}
 LAUNCH=${LAUNCH//__CLAUDEPERMFLAG__/$CLAUDE_PERM_FLAG}

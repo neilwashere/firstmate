@@ -1983,7 +1983,15 @@ case "${1:-} ${2:-}" in
     fi
     exit 0 ;;
   'agent get')
-    if [ -f "$D/herdr-agent-registration" ]; then
+    if [ -f "$D/herdr-launched" ] && [ -f "$D/herdr-agent-after-launch" ]; then
+      cat "$D/herdr-agent-after-launch"
+    elif [ -f "$D/herdr-agent-stopped" ]; then
+      if [ -f "$D/herdr-agent-stopped-registration" ]; then
+        cat "$D/herdr-agent-stopped-registration"
+      else
+        printf '{"error":{"code":"agent_not_found"}}\n'
+      fi
+    elif [ -f "$D/herdr-agent-registration" ]; then
       cat "$D/herdr-agent-registration"
     elif [ -f "$D/herdr-agent-live" ]; then
       # The agent came back with its server. Nothing here is reclaimable.
@@ -1993,10 +2001,17 @@ case "${1:-} ${2:-}" in
       printf '{"error":{"code":"agent_not_found"}}\n'
     fi
     exit 0 ;;
+  'pane read')
+    if [ -f "$D/herdr-agent-check-identity" ]; then
+      printf 'transcript\n────────────────────────\n\n────────────────────────\n footer\n'
+    fi
+    exit 0 ;;
   'pane process-info')
+    if [ -f "$D/herdr-agent-active" ]; then
+      printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[{"pid":4243,"name":"pi","argv":["pi"],"cmdline":"pi"}]}}}\n' "$(cat "$D/herdr-pane")"
     # A retained registration with a shell-only pane models an exited agent
     # whose Herdr status authority still belongs to its previous session.
-    if [ -f "$D/herdr-agent-registration" ]; then
+    elif [ -f "$D/herdr-agent-registration" ]; then
       printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":4242,"foreground_processes":[]}}}\n' \
         "$(cat "$D/herdr-pane")"
     else
@@ -2016,9 +2031,18 @@ case "${1:-} ${2:-}" in
       ". '"*"'") staged=${payload#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || payload=$(cat "$staged") ;;
     esac
     case "$payload" in
+      /quit)
+        if [ -f "$D/herdr-agent-active" ]; then
+          rm -f "$D/herdr-agent-active"
+          : > "$D/herdr-agent-stopped"
+        fi ;;
       *'encode launch-brief'* | *'Firstmate operational input waiting: read'*)
         printf '%s\n' "$payload" > "$D/launched-command"
-        : > "$D/herdr-agent-live" ;;
+        : > "$D/herdr-agent-live"
+        : > "$D/herdr-launched"
+        if [ -f "$D/herdr-agent-check-identity" ]; then
+          : > "$D/herdr-agent-active"
+        fi ;;
     esac
     exit 0 ;;
   'workspace list')
@@ -2120,8 +2144,8 @@ herdr_case_or_skip() {  # <name> <id> [session] [surviving-pane]
 }
 
 test_herdr_relaunch_resumes_only_the_registered_pi_session() {
-  local dir out rc=0 command registered
-  for registered in pi claude; do
+  local dir out rc=0 command registered id=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  for registered in pi claude missing; do
     herdr_case_or_skip "resume-$registered" "resume-$registered" || {
       echo "skip - herdr relaunch needs jq (the herdr adapter parses JSON with it)"
       return 0
@@ -2129,23 +2153,156 @@ test_herdr_relaunch_resumes_only_the_registered_pi_session() {
     dir=$HERDR_CASE_DIR
     rm -f "$dir/fake/herdr-stopped"
     sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/resume-$registered.meta"
+    pi_session_fixture "$dir" "$id"
     # Keep the pane's status authority registered to an existing Pi session,
     # while process-info proves that its previous agent has exited.
-    printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"/tmp/pi-bound-session.jsonl"}}}}\n' \
-      "$registered" > "$dir/fake/herdr-agent-registration"
+    if [ "$registered" != missing ]; then
+      printf '{"result":{"agent":{"agent":"%s","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+        "$registered" "$PI_FIXTURE_SESSION" > "$dir/fake/herdr-agent-registration"
+    fi
     out=$(run_spawn "$dir" "resume-$registered" --relaunch --harness pi) || rc=$?
-    expect_code 0 "$rc" "Herdr Pi relaunch should complete ($registered registration)"$'\n'"$out"
-    command=$(cat "$dir/fake/launched-command")
     if [ "$registered" = pi ]; then
-      assert_contains "$command" "--session '/tmp/pi-bound-session.jsonl'" \
+      expect_code 0 "$rc" "Herdr Pi relaunch should resume its existing registration"$'\n'"$out"
+      command=$(< "$dir/fake/launched-command")
+      assert_contains "$command" "--session '$PI_FIXTURE_SESSION'" \
         "the replacement Pi must resume the session that owns Herdr status authority"
     else
-      assert_not_contains "$command" "--session" \
-        "a Pi replacement must not resume a foreign adapter's conversation"
+      expect_code 1 "$rc" "Herdr Pi relaunch must refuse a $registered registration"$'\n'"$out"
+      [ ! -e "$dir/fake/launched-command" ] || fail "a $registered registration launched a fresh Pi session"
     fi
     rc=0
   done
-  pass "fm-spawn --relaunch: resumes the bound Pi session only for a Pi registration"
+  pass "fm-spawn --relaunch: resumes a bound Pi session and refuses missing or foreign registration"
+}
+
+pi_session_fixture() {  # <case-dir> <session-id>
+  local dir=$1 id=$2 wt encoded folder
+  wt=$(cd "$dir/wt" && pwd -P)
+  encoded=${wt#/}
+  encoded=${encoded//\//-}
+  folder="$dir/user-home/.pi/agent/sessions/--${encoded}--"
+  mkdir -p "$folder"
+  PI_FIXTURE_SESSION="$folder/2026-10-13T00-00-00-000Z_${id}.jsonl"
+  printf '{"type":"session","version":3,"id":"%s","cwd":"%s","timestamp":"2026-10-13T00:00:00.000Z"}\n' "$id" "$wt" > "$PI_FIXTURE_SESSION"
+}
+
+test_control_pi_session_survives_agent_exit() {
+  local dir out rc=0 command id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+  herdr_case_or_skip pi-session-before-exit rlpi || return 0
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/rlpi.meta"
+  pi_session_fixture "$dir" "$id"
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+    "$PI_FIXTURE_SESSION" > "$dir/fake/herdr-agent-registration"
+  cp "$dir/fake/herdr-agent-registration" "$dir/fake/herdr-agent-after-launch"
+  : > "$dir/fake/herdr-agent-active"
+  : > "$dir/fake/herdr-agent-check-identity"
+  out=$(run_control "$dir" rlpi relaunch --note 'Continue the same task') || rc=$?
+  expect_code 0 "$rc" "Pi relaunch must retain its already-bound session across exit"$'\n'"$out"
+  command=$(< "$dir/fake/launched-command")
+  assert_contains "$command" "--session '$PI_FIXTURE_SESSION'" \
+    "Pi must receive the original existing session file, not a fresh session"
+  pass "fm-control relaunch preserves the bound existing Pi session across exit"
+}
+
+test_control_can_select_an_existing_older_session_for_the_same_task() {
+  local dir out rc=0 command original newer
+  herdr_case_or_skip pi-older-session rlpi-old || return 0
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/rlpi-old.meta"
+  pi_session_fixture "$dir" aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+  original=$PI_FIXTURE_SESSION
+  pi_session_fixture "$dir" bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  newer=$PI_FIXTURE_SESSION
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+    "$newer" > "$dir/fake/herdr-agent-registration"
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+    "$original" > "$dir/fake/herdr-agent-after-launch"
+  : > "$dir/fake/herdr-agent-active"
+  : > "$dir/fake/herdr-agent-check-identity"
+  out=$(run_control "$dir" rlpi-old relaunch --pi-session-file "$original" --note 'Continue the existing task') || rc=$?
+  expect_code 0 "$rc" "an older session with the same task, account, and header must be selectable"$'\n'"$out"
+  command=$(< "$dir/fake/launched-command")
+  assert_contains "$command" "--session '$original'" "the old session path must be the launch argument"
+  assert_not_contains "$command" "--session '$newer'" "the replacement must not choose the newest bound session"
+  pass "fm-control selects an existing older Pi file for the same task"
+}
+
+test_control_pi_session_selection_refuses_invalid_owner_before_exit() {
+  local dir out rc=0 scenario valid selected id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+  for scenario in missing missing-registration wrong-cwd wrong-id symlink other-account pinned-account wrong-harness; do
+    herdr_case_or_skip "pi-invalid-$scenario" "invalid-$scenario" || return 0
+    dir=$HERDR_CASE_DIR
+    rm -f "$dir/fake/herdr-stopped"
+    sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/invalid-$scenario.meta"
+    pi_session_fixture "$dir" "$id"
+    valid=$PI_FIXTURE_SESSION
+    selected=$valid
+    case "$scenario" in
+      missing) selected=${valid%.jsonl}-missing.jsonl ;;
+      wrong-cwd)
+        printf '{"type":"session","version":3,"id":"%s","cwd":"/not-this-task"}\n' "$id" > "$valid" ;;
+      wrong-id)
+        printf '{"type":"session","version":3,"id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","cwd":"%s"}\n' "$dir/wt" > "$valid" ;;
+      symlink)
+        selected=${valid%.jsonl}-link.jsonl
+        ln -s "$valid" "$selected" ;;
+      other-account)
+        mkdir -p "$dir/other-account"
+        selected="$dir/other-account/${valid##*/}"
+        cp "$valid" "$selected" ;;
+      pinned-account)
+        mkdir -p "$dir/pinned-pi-root" "$dir/home/config"
+        printf '%s\nopenai\n' "$dir/pinned-pi-root" > "$dir/home/config/pi-account" ;;
+      wrong-harness)
+        sed -i 's/^harness=pi$/harness=claude/' "$dir/home/state/invalid-$scenario.meta" ;;
+    esac
+    if [ "$scenario" != missing-registration ]; then
+      printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+        "$valid" > "$dir/fake/herdr-agent-registration"
+    fi
+    : > "$dir/fake/herdr-agent-active"
+    : > "$dir/fake/herdr-agent-check-identity"
+    if [ "$scenario" = wrong-harness ]; then
+      out=$(run_control "$dir" "invalid-$scenario" relaunch --harness pi --pi-session-file "$selected" --note 'Continue the task') || rc=$?
+    elif [ "$scenario" = missing-registration ]; then
+      out=$(run_control "$dir" "invalid-$scenario" relaunch --note 'Continue the task') || rc=$?
+    else
+      out=$(run_control "$dir" "invalid-$scenario" relaunch --pi-session-file "$selected" --note 'Continue the task') || rc=$?
+    fi
+    expect_code 1 "$rc" "invalid Pi session ($scenario) must refuse before exit"$'\n'"$out"
+    [ -e "$dir/fake/herdr-agent-active" ] || fail "invalid Pi session ($scenario) stopped its original agent"
+    [ ! -e "$dir/fake/launched-command" ] || fail "invalid Pi session ($scenario) launched a replacement: $out"
+    rc=0
+  done
+  pass "fm-control refuses missing, mismatched, symlinked, foreign-account and foreign-harness Pi sessions"
+}
+
+test_control_pi_session_requires_post_launch_identity() {
+  local dir out rc=0 original newer
+  herdr_case_or_skip pi-post-launch-mismatch rlpi-mismatch || return 0
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/rlpi-mismatch.meta"
+  pi_session_fixture "$dir" aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+  original=$PI_FIXTURE_SESSION
+  pi_session_fixture "$dir" bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  newer=$PI_FIXTURE_SESSION
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+    "$original" > "$dir/fake/herdr-agent-registration"
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+    "$newer" > "$dir/fake/herdr-agent-after-launch"
+  : > "$dir/fake/herdr-agent-active"
+  : > "$dir/fake/herdr-agent-check-identity"
+  out=$(run_control "$dir" rlpi-mismatch relaunch --note 'Continue the task') || rc=$?
+  expect_code 1 "$rc" "a launched replacement reporting a different session must not be called recovered"$'\n'"$out"
+  assert_contains "$out" 'different Pi session' "the mismatch must name the actual identity failure"
+  [ "$(journal_field "$dir" rlpi-mismatch phase)" = 'failed:launching' ] \
+    || fail "the mismatched replacement needs a truthful failed launch journal"
+  [ -e "$dir/fake/launched-command" ] || fail "a post-launch identity refusal must not claim no agent was started"
+  pass "fm-control refuses to claim recovery when the replacement reports another Pi session"
 }
 
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server() {
@@ -2503,6 +2660,10 @@ test_tmux_refuses_a_session_that_cannot_be_found
 test_tmux_refuses_when_the_server_is_gone
 test_reclaim_refuses_an_unreadable_endpoint
 test_herdr_relaunch_resumes_only_the_registered_pi_session
+test_control_pi_session_survives_agent_exit
+test_control_can_select_an_existing_older_session_for_the_same_task
+test_control_pi_session_selection_refuses_invalid_owner_before_exit
+test_control_pi_session_requires_post_launch_identity
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server
 test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server
 test_herdr_rebind_stays_in_the_recorded_session
