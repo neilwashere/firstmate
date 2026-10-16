@@ -1426,6 +1426,18 @@ test_crewmate_scaffolds_forbid_pool_administration() {
       "$mode ship brief pinned one provider instead of covering every provider"
     assert_grep "sibling slot" "$brief" \
       "$mode ship brief did not forbid writing into a sibling slot"
+    assert_grep "Review workspaces are not pool slots" "$brief" \
+      "$mode ship brief incorrectly makes the task's review workspace a pool slot"
+    assert_grep "let the tool create and remove its trees" "$brief" \
+      "$mode ship brief did not hand tree lifecycle to the review tool"
+    assert_grep "remove a workspace of your own task yourself" "$brief" \
+      "$mode ship brief did not let the worker remove its own review workspace"
+    assert_grep "Never remove another task's workspace" "$brief" \
+      "$mode ship brief did not protect other tasks' review workspaces"
+    assert_grep "do not stop for a decision" "$brief" \
+      "$mode ship brief still stops the worker over a review tool's refusal"
+    assert_grep "\`$home/data/$id/review-evidence/\`" "$brief" \
+      "$mode ship brief did not expand the review evidence directory"
     # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
     assert_grep 'blocked [at=<epoch>]: {what you need}' "$brief" \
       "$mode ship brief gave the prohibition no exit for a genuine second-checkout need"
@@ -1435,14 +1447,17 @@ test_crewmate_scaffolds_forbid_pool_administration() {
     || fail "fm-brief.sh --scout exited non-zero"
   brief="$home/data/brief-pool-scout/brief.md"
   assert_grep "worktree pool" "$brief" "scout brief did not name the shared worktree pool"
+  assert_grep "Review workspaces are not pool slots" "$brief" "scout brief forbids task-owned review workspaces"
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
   assert_grep 'blocked [at=<epoch>]: {what you need}' "$brief" "scout brief gave the prohibition no exit"
 
   # One shared string, not two copies: the emitted rule must be byte-identical
   # across the ship and scout scaffolds so a later edit cannot fix one and miss
   # the other.
-  ship_rule=$(awk '/^7\. Never administer/,/^$/' "$home/data/brief-pool-no-mistakes/brief.md")
-  scout_rule=$(awk '/^7\. Never administer/,/^$/' "$brief")
+  # The evidence directory names the task id, so it is masked before comparing.
+  ship_rule=$(awk '/^7\. Never administer/,/^$/' "$home/data/brief-pool-no-mistakes/brief.md" \
+    | sed "s#$home/data/brief-pool-no-mistakes/#TASK_DATA/#")
+  scout_rule=$(awk '/^7\. Never administer/,/^$/' "$brief" | sed "s#$home/data/brief-pool-scout/#TASK_DATA/#")
   [ -n "$ship_rule" ] || fail "ship brief emitted no shared-infrastructure rule to compare"
   [ "$ship_rule" = "$scout_rule" ] \
     || fail "ship and scout shared-infrastructure rules have drifted apart"
@@ -1463,6 +1478,28 @@ test_crewmate_scaffolds_forbid_pool_administration() {
     "secondmate charter must not inherit the crewmate pool-administration prohibition"
 
   pass "fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool"
+}
+
+# Status lines reach the digest truncated, so workers must be told the file keeps
+# the whole line and to write ordinary prose rather than squeezing words together.
+test_status_lines_are_prose_in_every_scaffold() {
+  local home brief
+  home="$TMP_ROOT/status-prose-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-prose-ship alpha --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship exited non-zero"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-prose-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh --scout exited non-zero"
+  for brief in "$home/data/brief-prose-ship/brief.md" "$home/data/brief-prose-scout/brief.md"; do
+    assert_grep "Write every status line as plain prose with ordinary spaces" "$brief" \
+      "$brief did not tell the worker to write prose status lines"
+    assert_grep "never lost" "$brief" "$brief did not say the file keeps the whole line"
+    assert_grep "Never run words together, drop spaces, or abbreviate to" "$brief" \
+      "$brief did not forbid squeezing words together"
+  done
+  assert_grep "under \`$home/data/brief-prose-ship/\` and reference it" \
+    "$home/data/brief-prose-ship/brief.md" "ship brief did not point detail at the task data directory"
+  pass "fm-brief.sh: ship and scout scaffolds require prose status lines"
 }
 
 test_script_parses
@@ -1502,3 +1539,4 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_status_lines_are_prose_in_every_scaffold

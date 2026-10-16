@@ -272,6 +272,32 @@ fm_control_relaunch_resume_flag() {  # <harness> <registered-agent>
   return 0
 }
 
+# A Pi session may be resumed only from an existing file in the selected
+# account's session directory for this exact worktree. Pi's --session can
+# create a missing file, so checking the header and file identity before exit
+# and again before launch is part of the relaunch contract.
+fm_control_pi_session_file_validate() {  # <file> <worktree> <account-root> -> id<TAB>device:inode
+  local file=${1-} worktree=${2-} account_root=${3-} parent root encoded name header id inode
+  [ -n "$file" ] && [ -n "$worktree" ] && [ -n "$account_root" ] || return 1
+  case "$file" in /*.jsonl) ;; *) return 1 ;; esac
+  [ -f "$file" ] && [ ! -L "$file" ] && [ -r "$file" ] && [ -s "$file" ] || return 1
+  root=$(cd "$account_root" && pwd -P) || return 1
+  parent=$(cd "${file%/*}" && pwd -P) || return 1
+  encoded=${worktree#/}
+  encoded=${encoded//\//-}
+  encoded=${encoded//\\/-}
+  encoded=${encoded//:/-}
+  [ "$parent" = "$root/sessions/--${encoded}--" ] || return 1
+  name=${file##*/}
+  IFS= read -r header < "$file" || [ -n "$header" ] || return 1
+  id=$(printf '%s\n' "$header" | jq -er --arg cwd "$worktree" \
+    'select(.type == "session" and .version == 3 and .cwd == $cwd and (.id | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9]$"))) | .id' 2>/dev/null) || return 1
+  case "$name" in *"_$id.jsonl") ;; *) return 1 ;; esac
+  inode=$(/usr/bin/stat -f '%d:%i' "$file" 2>/dev/null) \
+    || inode=$(stat -c '%d:%i' "$file" 2>/dev/null) || return 1
+  printf '%s\t%s' "$id" "$inode"
+}
+
 # Which named keys a backend adapter can deliver. Every session provider
 # normalizes Enter, Ctrl+C, and the Ctrl+U composer clear; Orca's terminal API
 # exposes only an interrupt and an Enter, so it can deliver neither Escape nor

@@ -3723,9 +3723,27 @@ test_capture_calls_pane_read() {
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_capture default:w1:p2 250' "$ROOT" )
   [ "$out" = $'line one\nline two\nline three' ] || fail "capture did not pass through pane read output, got '$out'"
-  assert_contains "$(cat "$log")" "HERDR_SESSION=default"$'\x1f''pane'$'\x1f''read'$'\x1f''w1:p2'$'\x1f''--source'$'\x1f''recent'$'\x1f''--lines'$'\x1f''250' \
-    "capture did not call pane read with the right pane id and line bound"
-  pass "fm_backend_herdr_capture: calls 'pane read <pane> --source recent --lines N' with the session set"
+  assert_contains "$(cat "$log")" "HERDR_SESSION=default"$'\x1f''pane'$'\x1f''read'$'\x1f''w1:p2'$'\x1f''--source'$'\x1f''recent'$'\x1f''--lines'$'\x1f''250'$'\x1f''--format'$'\x1f''ansi' \
+    "capture did not call pane read with the right pane id, line bound, and ANSI format"
+  pass "fm_backend_herdr_capture: calls 'pane read <pane> --source recent --lines N --format ansi' with the session set"
+}
+
+test_capture_reduces_ansi_read_to_text_rows() {
+  local dir log resp fb out
+  # A text-format recent read of an idle alternate-screen agent makes Herdr
+  # wheel-scroll the agent to harvest history; the ANSI read is passive. The
+  # capture must still hand callers the rows the text read would: styling
+  # removed, CRLF row endings and trailing padding dropped, and the blank rows
+  # below the last drawn row removed so a bounded tail ends on real content.
+  dir="$TMP_ROOT/capture-ansi"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '\033[0m\033[1m\033[38;5;1mred bold\033[0m tail   \r\nplain row\r\n\033[38;2;10;200;30m> composer\033[39m \033[7m \033[27m\r\n          \r\n\r\n' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_capture default:w1:p2 2' "$ROOT" )
+  [ "$out" = $'plain row\n> composer' ] || fail "capture did not reduce the ANSI read to trimmed text rows ending at the last drawn row, got '$out'"
+  assert_contains "$(grep $'\x1f''pane'$'\x1f''read' "$log")" $'\x1f''--lines'$'\x1f''200'$'\x1f''--format'$'\x1f''ansi' \
+    "capture must read the pane in ANSI format, never the viewport-moving text format"
+  pass "fm_backend_herdr_capture: reduces the passive ANSI read to the text rows callers expect"
 }
 
 test_capture_works_around_small_lines_bug() {
@@ -5981,6 +5999,7 @@ test_list_live_scoped_to_this_homes_workspace_only
 test_parse_target
 test_normalize_key
 test_capture_calls_pane_read
+test_capture_reduces_ansi_read_to_text_rows
 test_capture_works_around_small_lines_bug
 test_capture_preserves_pane_read_failure
 test_send_key_normalizes_and_targets_pane

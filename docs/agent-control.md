@@ -88,6 +88,9 @@ A relaunch does take one session reference when the endpoint's own runtime recor
    The endpoint's runtime may bind pane status to one session identity; the launch owner preserves it only when that runtime records a reference the replacement adapter can consume, and otherwise launches the ordinary fresh session.
    This reference is a launch input, never authority to send, close, or act on the pane.
    [`docs/herdr-backend.md`](herdr-backend.md#agent-status-authority-and-relaunch) owns the mechanism and measured behavior.
+   A Herdr-backed Pi relaunch refuses before the old agent stops when no original Pi session reference is usable.
+   `--fresh-session` skips that requirement and launches a new Pi session; it is mutually exclusive with `--pi-session-file`, and the relaunch journal records `fresh_session=1` with a `fresh_session_reason` of `no-session-reference` or `session-reference-discarded`.
+   Use it only for a session that cannot be resumed at all, never to upgrade a healthy worker or while a long external tool the worker started is still running, and expect Herdr to keep the pane's last reported status until the new session's reports are accepted.
 
 Switching harness is therefore one ordinary relaunch rather than a separate mechanism.
 

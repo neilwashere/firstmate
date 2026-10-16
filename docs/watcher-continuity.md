@@ -137,6 +137,8 @@ After an actionable Pi, omp, or OpenCode child close, the adapter:
 3. Confirms the handling handoff before scheduling the follow-up: Pi confirms against the restoration's own recovery token, while omp and OpenCode confirm against the current successor.
 4. Delivers the original wake.
 
+On Pi, a later verified arm that closes while an earlier branch delivery is pending starts its own successor immediately; its wake remains in the serial delivery queue until the earlier branch settles.
+
 A complete Pi reason line can be observed while the predecessor is still finishing durable cleanup.
 That line is retained for replacement handoff, but the adapter never treats that already-ready predecessor as its own successor.
 

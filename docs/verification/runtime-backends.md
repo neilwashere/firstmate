@@ -1137,7 +1137,7 @@ The CLI matrix was checked directly:
 | Explicit session routing | `herdr <verb> ... --session <name>` | Reached the named session even while another server was running. |
 | Literal send | `herdr pane send-text <pane> <text> --session <name>` | Left text unsubmitted until Enter. |
 | Keys | `herdr pane send-keys <pane> enter|escape|ctrl+c --session <name>` | Enter and Escape worked; Ctrl-C interrupted foreground work. |
-| Capture | `herdr pane read <pane> --source recent --lines N` | Small N could return empty below viewport height; a 200-line request plus local trim was stable. |
+| Capture | `herdr pane read <pane> --source recent --lines N --format ansi` | Small N could return empty below viewport height; a 200-line request plus local trim was stable. The ANSI format keeps the read passive on Herdr 0.8.0 and later; see "Passive capture" below. |
 | Viewport capture | `herdr pane read <pane> --source visible` | Verified on 2026-09-17 against Herdr 0.8.0 (protocol 19): `herdr pane read --help` documents `--source <SOURCE>` with `[possible values: visible, recent, recent-unwrapped, detection]`; `--source visible` exited 0 and returned 51 lines (the viewport) while `--source recent --lines 200` returned 200. This is the viewport-only read behind `fm_backend_herdr_visible_capture`, which Kimi's trust-dialog gate requires. |
 | Styled viewport capture | `herdr pane read <pane> --source visible --format ansi` | Verified on 2026-09-26 against Herdr 0.9.0 with Claude Code 2.1.283: the flag pair exited 0 and returned the viewport with SGR attributes intact, which is the styled read behind `fm_backend_herdr_visible_capture_ansi` that ghost/placeholder stripping needs (see "Claude exit behind the slash-command popup" below). |
 | Native state | `herdr agent get <pane>` | Working and done transitions were visible on some harnesses; live Claude Code 2.1.236 on Herdr 0.8.0 kept `agent_status=idle` for an entire landed turn, including a multi-second tool call, so submit confirmation falls through to the shared composer verdict. Native `busy` remains positive activity evidence, while native `idle` cannot close a turn and the adapter's semantic lifecycle decides worker state. |
@@ -1146,6 +1146,26 @@ The CLI matrix was checked directly:
 
 All destructive verification used `bin/fm-herdr-lab.sh` with a non-default `fm-lab-` name and a byte-identical default-session tripwire.
 No ambient `herdr server stop` command is a supported test operation.
+
+### Passive capture
+
+Measured 2026-10-13 and 2026-10-14 on Linux x86_64 with Herdr 0.9.3 (protocol 22) and the `pi-tui` 1.2.0 library shipped with Pi 1.2.0, the guarantee behind `fm_backend_herdr_capture`.
+A text-format `recent` read asking for more lines than the screen holds, on an idle recognized agent drawing the alternate screen with mouse reporting, is Herdr's documented alternate-screen history read: Herdr writes SGR wheel events into the agent to page its transcript and then returns it.
+A fullscreen Pi transcript treats those events as user scrolling, so it scrolls and shows its "Jump to latest message" label for the length of the read.
+
+The fixture was a fullscreen `TuiAltScreen` with a 300-row follow-end `ScrollView` and no output of its own, logging every stdin chunk and its follow state, in a 119x40 `fm-lab-` pane registered with `herdr pane report-agent <pane> --source fm-lab --agent pi --state idle`.
+
+| Read | Wheel events delivered | Transcript |
+| --- | --- | --- |
+| `pane read <pane> --source recent --lines 200` | 66 up, 169 down | scrolled 167 rows up, label shown, restored |
+| `fm_backend_herdr_capture <session>:<pane> 40`, four times | 0 | unmoved |
+| `pane read <pane> --source visible` | 0 | unmoved |
+| `pane read <pane> --source recent --lines 30` | 0 | unmoved |
+| text read while the agent is reported `working` | 0 | unmoved |
+
+On the same server, the ANSI read of a normal-screen pane mixing SGR colour, an OSC 8 link, OSC 133 marks, wide glyphs and trailing spaces contained only SGR sequences, and after `fm_backend_herdr_ansi_rows_to_text` its 199 rows were byte-identical to the text read.
+For the fullscreen fixture the reduced ANSI read equalled the last 39 rows of the text read, which is the screen; alternate-screen history beyond the screen is deliberately not collected.
+`tests/fm-backend-herdr.test.sh` pins the ANSI request and the row reduction.
 
 ### fm-remote server birth and login-keychain access
 

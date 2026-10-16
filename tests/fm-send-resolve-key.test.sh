@@ -773,7 +773,8 @@ test_stamped_close_line_stays_within_the_status_line_cap() {
   home=$(setup_home cap-with-stamp)
   fm_write_meta "$home/state/t1.meta" "window=sess:fm-t1" "kind=ship"
   printf 'needs-decision [key=api-shape]: REST or gRPC\n' > "$home/state/t1.status"
-  answer=$(printf 'x%.0s' {1..400})
+  answer=$(printf 'note %.0s' {1..80})
+  answer=${answer% }
 
   run_send "$fb" "$home" "$log" t1 --resolve-key api-shape "$answer"; rc=$?
   expect_code 0 "$rc" "answering with an over-long note should succeed, not refuse"

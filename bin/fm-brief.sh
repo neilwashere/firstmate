@@ -581,10 +581,19 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
      get/return/remove/prune, the equivalent operations on any other worktree provider or runtime
      backend, and `git worktree add|remove|move|prune`. A slot that looks unused is not evidence
      that it is free, and returning your own worktree is firstmate's job at cleanup, not yours.
+     Review workspaces are not pool slots. A review tool you are told to run (such as
+     keith-review) creates its own trees under a workspace root it owns; create that root
+     where the tool's instructions say, let the tool create and remove its trees, and
+     remove a workspace of your own task yourself once its review is terminal, after
+     copying its `control/` and `reports/` directories to `@REVIEW_EVIDENCE_DIR@`.
+     Never remove another task's workspace. If the tool refuses to remove its trees,
+     copy the evidence as above, remove the workspace, and record the refusal text in
+     your report; do not stop for a decision.
    If you genuinely need a second checkout, another slot, or the daemon touched, append
    `blocked [at=<epoch>]: {what you need}` and stop; firstmate arranges it.
 EOF
 SHARED_INFRA_RULE=${SHARED_INFRA_RULE%$'\n'}
+SHARED_INFRA_RULE=${SHARED_INFRA_RULE//@REVIEW_EVIDENCE_DIR@/$DATA/$ID/review-evidence/}
 
 if [ -n "$BASE_BRANCH" ]; then
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean copy of its base branch.
@@ -623,6 +632,10 @@ The report is the only thing that survives, so anything worth keeping must be in
    Each append wakes firstmate, so report sparingly: only phase changes a supervisor
    would act on and the needs-decision/blocked/paused/done/failed states. No step-by-step
    FYI progress lines; firstmate reads your pane for that.
+   Write every status line as plain prose with ordinary spaces. The file keeps the whole line;
+   firstmate's digest shows the first 220 characters and the file path, so a long line is
+   truncated in the digest, never lost. Never run words together, drop spaces, or abbreviate to
+   fit; put detail in your report under \`$DATA/$ID/\` and reference it.
    Whenever you mention a PR anywhere - a status line, your terminal, a summary - write its full
    https:// URL exactly as the forge printed it, never a bare number such as "PR 108"; firstmate
    copies that URL from your line rather than assembling one.
@@ -700,6 +713,10 @@ $RULE1
    would act on (setup done, bug reproduced, fix implemented, validation passed) and the
    needs-decision/blocked/paused/done/failed states. No step-by-step FYI progress lines;
    firstmate reads your pane for that.
+   Write every status line as plain prose with ordinary spaces. The file keeps the whole line;
+   firstmate's digest shows the first 220 characters and the file path, so a long line is
+   truncated in the digest, never lost. Never run words together, drop spaces, or abbreviate to
+   fit; put detail in your report under \`$DATA/$ID/\` and reference it.
    Whenever you mention a PR anywhere - a status line, your terminal, a summary - write its full
    https:// URL exactly as the forge printed it, never a bare number such as "PR 108"; firstmate
    copies that URL from your line rather than assembling one.

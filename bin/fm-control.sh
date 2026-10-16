@@ -6,6 +6,7 @@
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
 #                                         [--effort <level>]
+#                                         [--pi-session-file <path> | --fresh-session]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -80,6 +81,19 @@
 #              inherits the local copy but none of the conversation; a
 #              secondmate reconciles its own home's records at startup, so its
 #              standing charter is never rewritten.
+#              A Herdr-backed Pi worker is relaunched into its original Pi
+#              session, and a relaunch with no usable original session refuses
+#              before the agent stops. --pi-session-file selects an older
+#              session file for the same task. --fresh-session instead skips
+#              that requirement and launches a new Pi session; use it only when
+#              the old session cannot be resumed at all, never to upgrade a
+#              healthy worker or while a long external tool the worker started
+#              is still running. The two flags are mutually exclusive. The
+#              journal records `fresh_session=1` and a `fresh_session_reason` of
+#              `no-session-reference` or `session-reference-discarded`. Herdr
+#              may keep reporting the previous session's last status for the
+#              pane (docs/herdr-backend.md "Agent status authority and
+#              relaunch").
 #              Records a durable checkpoint and that note, exits the old agent,
 #              then delegates the launch to its single owner,
 #              bin/fm-spawn.sh --relaunch. A failure before publication keeps
@@ -243,6 +257,9 @@ MODEL_SET=0
 EFFORT_SET=0
 NOTE=
 NOTE_SET=0
+PI_SESSION_FILE_ARG=
+PI_SESSION_FILE_SET=0
+FRESH_SESSION=0
 control_want_value=
 for control_arg in "$@"; do
   if [ -n "$control_want_value" ]; then
@@ -253,6 +270,7 @@ for control_arg in "$@"; do
       harness) NEW_HARNESS=$control_arg; HARNESS_SET=1 ;;
       model) NEW_MODEL=$control_arg; MODEL_SET=1 ;;
       effort) NEW_EFFORT=$control_arg; EFFORT_SET=1 ;;
+      pi_session_file) PI_SESSION_FILE_ARG=$control_arg; PI_SESSION_FILE_SET=1 ;;
       note) NOTE=$control_arg; NOTE_SET=1 ;;
       note_file)
         [ -f "$control_arg" ] || die "--note-file '$control_arg' is not a readable file"
@@ -270,6 +288,9 @@ for control_arg in "$@"; do
     --model=*) NEW_MODEL=${control_arg#--model=}; MODEL_SET=1 ;;
     --effort) control_want_value=effort ;;
     --effort=*) NEW_EFFORT=${control_arg#--effort=}; EFFORT_SET=1 ;;
+    --pi-session-file) control_want_value=pi_session_file ;;
+    --pi-session-file=*) PI_SESSION_FILE_ARG=${control_arg#--pi-session-file=}; PI_SESSION_FILE_SET=1 ;;
+    --fresh-session) FRESH_SESSION=1 ;;
     --note) control_want_value=note ;;
     --note=*) NOTE=${control_arg#--note=}; NOTE_SET=1 ;;
     --note-file) control_want_value=note_file ;;
@@ -287,12 +308,15 @@ if [ -n "$control_want_value" ]; then
 fi
 
 if [ "$VERB" != relaunch ]; then
-  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
-    || die "--harness, --model, --effort, and --note apply to 'relaunch' only"
+  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] && [ "$PI_SESSION_FILE_SET" = 0 ] && [ "$FRESH_SESSION" = 0 ] \
+    || die "--harness, --model, --effort, --pi-session-file, --fresh-session, and --note apply to 'relaunch' only"
 fi
+[ "$FRESH_SESSION" = 0 ] || [ "$PI_SESSION_FILE_SET" = 0 ] \
+  || die "--fresh-session and --pi-session-file are mutually exclusive: one starts a new Pi session, the other resumes a chosen one"
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
+[ "$PI_SESSION_FILE_SET" = 0 ] || [ -n "$PI_SESSION_FILE_ARG" ] || die "--pi-session-file requires a non-empty value"
 case "$NEW_EFFORT" in
   ''|default|low|medium|high|xhigh|max|ultra) ;;
   *) die "--effort must be one of default, low, medium, high, xhigh, max, ultra" ;;
@@ -553,7 +577,7 @@ verify_interrupt_running() {
     after=$(agent_state)
     [ "$after" = alive ] \
       || die "task $ID's agent is '$after' after its interrupt key; an interrupt must leave the agent running"
-    proof=agent-alive
+    proof='agent-alive'
   fi
   printf '%s' "$proof"
 }
@@ -779,6 +803,10 @@ PRIOR_EFFORT=
 TARGET_HARNESS=$HARNESS
 TARGET_MODEL=
 TARGET_EFFORT=
+CONTROL_PI_SESSION_FILE=
+CONTROL_PI_SESSION_ID=
+CONTROL_PI_SESSION_INODE=
+CONTROL_FRESH_SESSION_REASON=
 
 journal_write() {  # <phase> [extra-line]...
   local phase=$1
@@ -1057,8 +1085,65 @@ record_note() {
   esac
 }
 
+relaunch_pi_session_before_stop() {
+  local identity agent ref selected account declared root proof recorded
+  case "$BACKEND:$TARGET_HARNESS" in
+  herdr:pi|herdr:pi-signed) ;;
+  *)
+    [ "$PI_SESSION_FILE_SET" = 0 ] || die "--pi-session-file requires a Herdr-backed Pi or pi-signed relaunch"
+    [ "$FRESH_SESSION" = 0 ] || die "--fresh-session requires a Herdr-backed Pi or pi-signed relaunch"
+    return 0
+    ;;
+  esac
+  case "$PRIOR_HARNESS" in
+  pi|pi-signed) ;;
+  *)
+    [ "$PI_SESSION_FILE_SET" = 0 ] || die "--pi-session-file cannot select a session from a different prior harness"
+    [ "$FRESH_SESSION" = 0 ] || die "--fresh-session requires the prior harness to be Pi or pi-signed"
+    return 0
+    ;;
+  esac
+  fm_backend_source "$BACKEND" || die "cannot load task $ID's Herdr backend before Pi session selection"
+  fm_backend_herdr_parse_target "$T" || die "cannot read task $ID's validated Herdr endpoint before exit"
+  identity=$(fm_backend_herdr_pane_agent_session_ref "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || identity=
+  agent=${identity%%$'\t'*}
+  ref=${identity#*$'\t'}
+  if [ "$FRESH_SESSION" = 1 ]; then
+    if [ "$agent" = pi ] && [ "$ref" != "$identity" ] && [ -n "$ref" ]; then
+      CONTROL_FRESH_SESSION_REASON="session-reference-discarded"
+    else
+      CONTROL_FRESH_SESSION_REASON="no-session-reference"
+    fi
+    return 0
+  fi
+  selected=
+  if [ "$PI_SESSION_FILE_SET" = 1 ]; then
+    selected=$PI_SESSION_FILE_ARG
+  elif [ "$agent" = pi ] && [ "$ref" != "$identity" ]; then
+    selected=$ref
+  fi
+  [ -n "$selected" ] || die "task $ID has no original Pi session reference; refusing to stop it for a fresh replacement"
+  account=$(fm_worker_account_resolve "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}") || die "cannot resolve the Pi account before session selection"
+  declared=${account%%$'\t'*}
+  if [ -n "$account" ]; then
+    root=${account#*$'\t'}
+    root=${root%%$'\t'*}
+  else
+    root="${HOME:?HOME required for Pi session selection}/.pi/agent"
+  fi
+  recorded=$(fm_meta_get "$META" account)
+  [ "$recorded" = "$declared" ] || die "task $ID's recorded Pi account differs from the selected account; refusing session selection"
+  proof=$(fm_control_pi_session_file_validate "$selected" "$WT" "$root") \
+    || die "task $ID's Pi session file is missing, unreadable, or does not match its worktree/account/header: $selected"
+  CONTROL_PI_SESSION_FILE=$selected
+  CONTROL_PI_SESSION_ID=${proof%%$'\t'*}
+  CONTROL_PI_SESSION_INODE=${proof#*$'\t'}
+  [ "$CONTROL_PI_SESSION_ID" != "$CONTROL_PI_SESSION_INODE" ] \
+    || die "task $ID's Pi session file has no valid identity proof"
+}
+
 do_relaunch() {
-  local exit_result state note_line
+  local exit_result state note_line identity agent ref
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -1088,6 +1173,10 @@ do_relaunch() {
     note_line="note=none"
   fi
   safe_checkpoint
+  relaunch_pi_session_before_stop
+  if [ "$FRESH_SESSION" = 1 ]; then
+    CHECKPOINT_LINES+=("fresh_session=1" "fresh_session_reason=$CONTROL_FRESH_SESSION_REASON")
+  fi
   cp -p "$META" "$META_PRIOR" || die "could not preserve task $ID's durable record before relaunching"
   RELAUNCH_ACTIVE=1
   journal_write checkpoint "${CHECKPOINT_LINES[@]}" "$note_line"
@@ -1107,6 +1196,10 @@ do_relaunch() {
   [ "$TARGET_MODEL" = default ] || spawn_args+=(--model "$TARGET_MODEL")
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
   if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
+      FM_CONTROL_PI_SESSION_FILE="$CONTROL_PI_SESSION_FILE" \
+      FM_CONTROL_PI_SESSION_ID="$CONTROL_PI_SESSION_ID" \
+      FM_CONTROL_PI_SESSION_INODE="$CONTROL_PI_SESSION_INODE" \
+      FM_CONTROL_PI_FRESH_SESSION="$FRESH_SESSION" \
       "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then
     RELAUNCH_META_PUBLISHED=1
     # $T was resolved from the record before the launch. When the recorded
@@ -1136,6 +1229,17 @@ do_relaunch() {
     die "the replacement agent for $ID did not come up within ${LAUNCH_WAIT}s (endpoint reads '$state')"
   }
   RELAUNCH_AGENT_CONFIRMED=1
+  if [ -n "$CONTROL_PI_SESSION_FILE" ]; then
+    fm_backend_source "$BACKEND" || die "the replacement is running but its Herdr backend cannot verify Pi session identity"
+    fm_backend_herdr_parse_target "$T" \
+      || die "the replacement is running but its Herdr endpoint cannot be read for Pi session identity"
+    identity=$(fm_backend_herdr_pane_agent_session_ref "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") \
+      || die "the replacement is running but Herdr did not report its Pi session identity"
+    agent=${identity%%$'\t'*}
+    ref=${identity#*$'\t'}
+    [ "$agent" = pi ] && [ "$ref" = "$CONTROL_PI_SESSION_FILE" ] \
+      || die "the replacement is running but Herdr reports a different Pi session; expected $CONTROL_PI_SESSION_FILE, got $ref"
+  fi
 
   journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
   RELAUNCH_ACTIVE=0
