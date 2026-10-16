@@ -1110,9 +1110,9 @@ relaunch_pi_session_before_stop() {
   ref=${identity#*$'\t'}
   if [ "$FRESH_SESSION" = 1 ]; then
     if [ "$agent" = pi ] && [ "$ref" != "$identity" ] && [ -n "$ref" ]; then
-      CONTROL_FRESH_SESSION_REASON=session-reference-discarded
+      CONTROL_FRESH_SESSION_REASON="session-reference-discarded"
     else
-      CONTROL_FRESH_SESSION_REASON=no-session-reference
+      CONTROL_FRESH_SESSION_REASON="no-session-reference"
     fi
     return 0
   fi
