@@ -1690,6 +1690,64 @@ test_terminal_failed() {
   pass "terminal failed run is authoritative"
 }
 
+test_mode_switch_ignores_historical_terminal_run() {
+  local mode d out
+  for mode in direct-PR local-only; do
+    reset_fakes
+    d=$(new_case "mode-switch-$mode")
+    make_repo_on_branch "$d/wt" fm/mode-switch
+    make_fakebin "$d" >/dev/null
+    fm_write_meta "$d/state/mode-switch.meta" \
+      "window=fm:fm-mode-switch" "worktree=$d/wt" "kind=ship" "mode=$mode" "harness=claude"
+    printf 'working: publishing without the old validation run\n' > "$d/state/mode-switch.status"
+    FM_FAKE_AXI_STATUS="$(run_failed fm/mode-switch)"
+    FM_FAKE_AXI_STATUS=${FM_FAKE_AXI_STATUS/status: completed/status: failed}
+    FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+    FM_FAKE_AXI_HOME="repo: $d/wt
+current_branch: fm/mode-switch
+daemon: running
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01RUN,fm/mode-switch,failed,${FM_FAKE_RUN_HEAD:0:8},\"\""
+    FM_FAKE_BUSY=1
+    local gen
+    gen=$("$ROOT/bin/fm-busy-event.sh" arm "$d/state" mode-switch)
+    "$ROOT/bin/fm-busy-event.sh" apply "$d/state" mode-switch busy --gen "$gen" \
+      --source claude-hook --event user-prompt-submit
+    out=$(run_crew_state "$d" mode-switch)
+    assert_contains "$out" "state: working" "$mode uses the current worker rather than a retired run"
+    assert_contains "$out" "source: pane" "$mode does not attribute the retired run"
+    assert_not_contains "$out" "source: run-step" "$mode must not inherit old failure"
+  done
+  pass "explicit non-pipeline delivery ignores historical terminal validation"
+}
+
+test_mode_switch_retains_live_pipeline_owner() {
+  reset_fakes
+  local d out
+  d=$(new_case mode-switch-live)
+  make_repo_on_branch "$d/wt" fm/mode-switch-live
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/mode-switch-live.meta" \
+    "window=fm:fm-mode-switch-live" "worktree=$d/wt" "kind=ship" "mode=direct-PR" "harness=claude"
+  FM_FAKE_AXI_STATUS="$(run_running fm/mode-switch-live)"
+  FM_FAKE_AXI_STATUS_RUN=$FM_FAKE_AXI_STATUS
+  FM_FAKE_AXI_HOME="repo: $d/wt
+current_branch: fm/mode-switch-live
+daemon: running
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01RUN,fm/mode-switch-live,running,${FM_FAKE_RUN_HEAD:0:8},\"\""
+  out=$(run_crew_state "$d" mode-switch-live)
+  assert_contains "$out" "state: working" "a real active run still owns its branch"
+  assert_contains "$out" "source: run-step" "mode change cannot conceal live pipeline custody"
+  FM_FAKE_AXI_HOME=${FM_FAKE_AXI_HOME/,running,/,failed,}
+  out=$(run_crew_state "$d" mode-switch-live)
+  assert_contains "$out" "state: unknown" "a contradictory live run is not treated as retired history"
+  assert_contains "$out" "source: run-step" "a contradictory source owner remains visible"
+  pass "explicit non-pipeline delivery still attributes live and ambiguous pipeline owners"
+}
+
 # Recovered delivery cases, varying only the terminal route and the optional
 # rebase step. The already-fixed passed-run case remains a control.
 test_cancelled_delivery_and_skipped_rebase() {
@@ -5558,6 +5616,8 @@ test_terminal_passed_with_open_gerrit_change_does_not_claim_merged
 test_terminal_passed_with_merged_gerrit_change_reports_merged
 test_terminal_passed_with_unreadable_gerrit_change_reports_unknown
 test_terminal_failed
+test_mode_switch_ignores_historical_terminal_run
+test_mode_switch_retains_live_pipeline_owner
 test_terminal_failed_ci_orphan_after_green_reads_done
 test_terminal_failed_ci_orphan_status_only_reads_done
 test_terminal_failed_ci_genuine_red_stays_failed

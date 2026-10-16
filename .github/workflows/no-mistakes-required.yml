@@ -1,5 +1,7 @@
 name: Require no-mistakes
-run-name: "PR #${{ github.event.pull_request.number }} body compliance - ${{ github.event.action }} - event ${{ github.run_number }} (run ${{ github.run_id }})"
+run-name: "PR #${{ github.event.pull_request.number }} body compliance - \
+  ${{ github.event.action }} - event ${{ github.run_number }} \
+  (run ${{ github.run_id }})"
 
 on:
   pull_request:
@@ -16,7 +18,9 @@ permissions:
 # an immutable per-event group so first-time-fork approvals can never collapse
 # opened/edited checks. Keep synchronize/reopened coalescing as before.
 concurrency:
-  group: no-mistakes-required-${{ github.event.pull_request.number }}-${{ (github.event.action == 'opened' || github.event.action == 'edited') && github.run_id || 'head-change' }}
+  group: "no-mistakes-required-${{ github.event.pull_request.number }}-${{ \
+    (github.event.action == 'opened' || github.event.action == 'edited') \
+    && github.run_id || 'head-change' }}"
   cancel-in-progress: true
 
 jobs:
@@ -24,10 +28,13 @@ jobs:
     name: PR must be raised via no-mistakes
     runs-on: ubuntu-latest
     if: >-
+      github.repository == 'kunchenguid/firstmate' &&
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
       - name: Verify no-mistakes signature and pipeline attestation
-        uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970 # v1.80.1
+        # v1.80.1
+        uses: "kunchenguid/no-mistakes/.github/actions/\
+          require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970"
         with:
           exempt-authors: kunchenguid
