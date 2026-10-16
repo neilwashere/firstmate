@@ -57,6 +57,7 @@ test_identifiers_are_not_flagged() {
 test_surrounding_punctuation_is_stripped() {
   assert_flagged '(2spent)' 2spent
   assert_flagged '"exactwordsaboveONCEagainhere",' exactwordsaboveONCEagainhere
+  # shellcheck disable=SC2016 # The backticks are literal text under test.
   assert_flagged 'see `4focused`:' 4focused
   assert_clean '(b3f73e16)'
   assert_clean '[v0.12.0],'

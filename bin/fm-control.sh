@@ -5,7 +5,8 @@
 # Usage: fm-control.sh <task-id> interrupt
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
-#                                         [--effort <level>] [--pi-session-file <path>]
+#                                         [--effort <level>]
+#                                         [--pi-session-file <path> | --fresh-session]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -80,6 +81,19 @@
 #              inherits the local copy but none of the conversation; a
 #              secondmate reconciles its own home's records at startup, so its
 #              standing charter is never rewritten.
+#              A Herdr-backed Pi worker is relaunched into its original Pi
+#              session, and a relaunch with no usable original session refuses
+#              before the agent stops. --pi-session-file selects an older
+#              session file for the same task. --fresh-session instead skips
+#              that requirement and launches a new Pi session; use it only when
+#              the old session cannot be resumed at all, never to upgrade a
+#              healthy worker or while a long external tool the worker started
+#              is still running. The two flags are mutually exclusive. The
+#              journal records `fresh_session=1` and a `fresh_session_reason` of
+#              `no-session-reference` or `session-reference-discarded`. Herdr
+#              may keep reporting the previous session's last status for the
+#              pane (docs/herdr-backend.md "Agent status authority and
+#              relaunch").
 #              Records a durable checkpoint and that note, exits the old agent,
 #              then delegates the launch to its single owner,
 #              bin/fm-spawn.sh --relaunch. A failure before publication keeps
@@ -245,6 +259,7 @@ NOTE=
 NOTE_SET=0
 PI_SESSION_FILE_ARG=
 PI_SESSION_FILE_SET=0
+FRESH_SESSION=0
 control_want_value=
 for control_arg in "$@"; do
   if [ -n "$control_want_value" ]; then
@@ -275,6 +290,7 @@ for control_arg in "$@"; do
     --effort=*) NEW_EFFORT=${control_arg#--effort=}; EFFORT_SET=1 ;;
     --pi-session-file) control_want_value=pi_session_file ;;
     --pi-session-file=*) PI_SESSION_FILE_ARG=${control_arg#--pi-session-file=}; PI_SESSION_FILE_SET=1 ;;
+    --fresh-session) FRESH_SESSION=1 ;;
     --note) control_want_value=note ;;
     --note=*) NOTE=${control_arg#--note=}; NOTE_SET=1 ;;
     --note-file) control_want_value=note_file ;;
@@ -292,9 +308,11 @@ if [ -n "$control_want_value" ]; then
 fi
 
 if [ "$VERB" != relaunch ]; then
-  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] && [ "$PI_SESSION_FILE_SET" = 0 ] \
-    || die "--harness, --model, --effort, --pi-session-file, and --note apply to 'relaunch' only"
+  [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] && [ "$PI_SESSION_FILE_SET" = 0 ] && [ "$FRESH_SESSION" = 0 ] \
+    || die "--harness, --model, --effort, --pi-session-file, --fresh-session, and --note apply to 'relaunch' only"
 fi
+[ "$FRESH_SESSION" = 0 ] || [ "$PI_SESSION_FILE_SET" = 0 ] \
+  || die "--fresh-session and --pi-session-file are mutually exclusive: one starts a new Pi session, the other resumes a chosen one"
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
@@ -788,6 +806,7 @@ TARGET_EFFORT=
 CONTROL_PI_SESSION_FILE=
 CONTROL_PI_SESSION_ID=
 CONTROL_PI_SESSION_INODE=
+CONTROL_FRESH_SESSION_REASON=
 
 journal_write() {  # <phase> [extra-line]...
   local phase=$1
@@ -1072,6 +1091,7 @@ relaunch_pi_session_before_stop() {
   herdr:pi|herdr:pi-signed) ;;
   *)
     [ "$PI_SESSION_FILE_SET" = 0 ] || die "--pi-session-file requires a Herdr-backed Pi or pi-signed relaunch"
+    [ "$FRESH_SESSION" = 0 ] || die "--fresh-session requires a Herdr-backed Pi or pi-signed relaunch"
     return 0
     ;;
   esac
@@ -1079,6 +1099,7 @@ relaunch_pi_session_before_stop() {
   pi|pi-signed) ;;
   *)
     [ "$PI_SESSION_FILE_SET" = 0 ] || die "--pi-session-file cannot select a session from a different prior harness"
+    [ "$FRESH_SESSION" = 0 ] || die "--fresh-session requires the prior harness to be Pi or pi-signed"
     return 0
     ;;
   esac
@@ -1087,6 +1108,14 @@ relaunch_pi_session_before_stop() {
   identity=$(fm_backend_herdr_pane_agent_session_ref "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE") || identity=
   agent=${identity%%$'\t'*}
   ref=${identity#*$'\t'}
+  if [ "$FRESH_SESSION" = 1 ]; then
+    if [ "$agent" = pi ] && [ "$ref" != "$identity" ] && [ -n "$ref" ]; then
+      CONTROL_FRESH_SESSION_REASON=session-reference-discarded
+    else
+      CONTROL_FRESH_SESSION_REASON=no-session-reference
+    fi
+    return 0
+  fi
   selected=
   if [ "$PI_SESSION_FILE_SET" = 1 ]; then
     selected=$PI_SESSION_FILE_ARG
@@ -1145,6 +1174,9 @@ do_relaunch() {
   fi
   safe_checkpoint
   relaunch_pi_session_before_stop
+  if [ "$FRESH_SESSION" = 1 ]; then
+    CHECKPOINT_LINES+=("fresh_session=1" "fresh_session_reason=$CONTROL_FRESH_SESSION_REASON")
+  fi
   cp -p "$META" "$META_PRIOR" || die "could not preserve task $ID's durable record before relaunching"
   RELAUNCH_ACTIVE=1
   journal_write checkpoint "${CHECKPOINT_LINES[@]}" "$note_line"
@@ -1167,6 +1199,7 @@ do_relaunch() {
       FM_CONTROL_PI_SESSION_FILE="$CONTROL_PI_SESSION_FILE" \
       FM_CONTROL_PI_SESSION_ID="$CONTROL_PI_SESSION_ID" \
       FM_CONTROL_PI_SESSION_INODE="$CONTROL_PI_SESSION_INODE" \
+      FM_CONTROL_PI_FRESH_SESSION="$FRESH_SESSION" \
       "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then
     RELAUNCH_META_PUBLISHED=1
     # $T was resolved from the record before the launch. When the recorded

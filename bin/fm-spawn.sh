@@ -2593,11 +2593,21 @@ muse_credential_present() {
 # transaction supplies its pre-exit reference; a standalone relaunch reads the
 # stopped pane's registration. Neither path passes a missing session file to
 # Pi, whose --session may otherwise create one at the named path.
+# A control transaction started with --fresh-session passes no session at all,
+# so the replacement is a new Pi session.
 relaunch_resume_args() {  # <harness> <backend> <target>
   local harness=${1-} backend=${2-} target=${3-} identity='' agent ref flag root proof
   [ "$backend" = herdr ] || return 0
   [ -n "$target" ] || return 0
   fm_backend_herdr_parse_target "$target" || return 1
+  if [ "${FM_CONTROL_PI_FRESH_SESSION:-0}" = 1 ]; then
+    [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ "$RELAUNCH" -eq 1 ] \
+      && [ "$(fm_meta_get "$STATE/$ID.control-relaunch" phase)" = launching ] \
+      && [ "$(fm_meta_get "$STATE/$ID.control-relaunch" relaunch_tx)" = "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+      && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+      || { echo "error: a fresh Pi session needs its matching control transaction" >&2; return 1; }
+    return 0
+  fi
   if [ -n "${FM_CONTROL_PI_SESSION_FILE:-}" ]; then
     [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ "$RELAUNCH" -eq 1 ] \
       && [ "$(fm_meta_get "$STATE/$ID.control-relaunch" phase)" = launching ] \

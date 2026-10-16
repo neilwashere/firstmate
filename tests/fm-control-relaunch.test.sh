@@ -2280,6 +2280,77 @@ test_control_pi_session_selection_refuses_invalid_owner_before_exit() {
   pass "fm-control refuses missing, mismatched, symlinked, foreign-account and foreign-harness Pi sessions"
 }
 
+test_fresh_session_replaces_a_pi_worker_whose_session_is_unusable() {
+  local dir out rc=0 command
+  herdr_case_or_skip pi-fresh-refused rlpi-nosess || return 0
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/rlpi-nosess.meta"
+  : > "$dir/fake/herdr-agent-active"
+  : > "$dir/fake/herdr-agent-check-identity"
+  out=$(run_control "$dir" rlpi-nosess relaunch --note 'Continue the task') || rc=$?
+  expect_code 1 "$rc" "a Pi relaunch with no session reference must still refuse by default"$'\n'"$out"
+  assert_contains "$out" 'no original Pi session reference' "the default refusal must name the missing session"
+  [ -e "$dir/fake/herdr-agent-active" ] || fail "the default refusal stopped the original agent"
+  [ ! -e "$dir/fake/launched-command" ] || fail "the default refusal launched a replacement"
+
+  rc=0
+  out=$(run_control "$dir" rlpi-nosess relaunch --fresh-session --note 'Continue the task from the report') || rc=$?
+  expect_code 0 "$rc" "--fresh-session must launch a new Pi session when the old one is unusable"$'\n'"$out"
+  command=$(< "$dir/fake/launched-command")
+  assert_not_contains "$command" '--session' "a fresh session must not be bound to an old session file"
+  [ "$(journal_field "$dir" rlpi-nosess fresh_session)" = 1 ] || fail "the relaunch journal must record fresh_session=1"
+  [ "$(journal_field "$dir" rlpi-nosess fresh_session_reason)" = no-session-reference ] \
+    || fail "the relaunch journal must record why the session was not resumed"
+  [ "$(journal_field "$dir" rlpi-nosess phase)" = complete ] || fail "the fresh-session relaunch did not complete"
+  pass "fm-control relaunch: --fresh-session replaces a Pi worker that has no usable session and journals it"
+}
+
+test_fresh_session_discards_a_resumable_session_only_on_request() {
+  local dir out rc=0 command id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+  herdr_case_or_skip pi-fresh-discard rlpi-discard || return 0
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/rlpi-discard.meta"
+  pi_session_fixture "$dir" "$id"
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+    "$PI_FIXTURE_SESSION" > "$dir/fake/herdr-agent-registration"
+  pi_session_fixture "$dir" bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  printf '{"result":{"agent":{"agent":"pi","agent_status":"idle","agent_session":{"kind":"path","value":"%s"}}}}\n' \
+    "$PI_FIXTURE_SESSION" > "$dir/fake/herdr-agent-after-launch"
+  : > "$dir/fake/herdr-agent-active"
+  : > "$dir/fake/herdr-agent-check-identity"
+  out=$(run_control "$dir" rlpi-discard relaunch --fresh-session --note 'Start over') || rc=$?
+  expect_code 0 "$rc" "--fresh-session must proceed even when a session could have been resumed"$'\n'"$out"
+  command=$(< "$dir/fake/launched-command")
+  assert_not_contains "$command" '--session' "--fresh-session resumed the old session"
+  [ "$(journal_field "$dir" rlpi-discard fresh_session_reason)" = session-reference-discarded ] \
+    || fail "the journal must say a resumable session was discarded on request"
+  pass "fm-control relaunch: --fresh-session starts a new session even when the old one was resumable"
+}
+
+test_fresh_session_conflicts_and_scope_are_refused() {
+  local dir out rc=0 original
+  herdr_case_or_skip pi-fresh-conflict rlpi-conflict || return 0
+  dir=$HERDR_CASE_DIR
+  rm -f "$dir/fake/herdr-stopped"
+  sed -i 's/^harness=claude$/harness=pi/' "$dir/home/state/rlpi-conflict.meta"
+  pi_session_fixture "$dir" aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+  original=$PI_FIXTURE_SESSION
+  : > "$dir/fake/herdr-agent-active"
+  out=$(run_control "$dir" rlpi-conflict relaunch --fresh-session --pi-session-file "$original" --note 'Start over') || rc=$?
+  expect_code 1 "$rc" "--fresh-session with --pi-session-file must die"$'\n'"$out"
+  assert_contains "$out" '--fresh-session and --pi-session-file are mutually exclusive' \
+    "the conflict must name both flags"
+  [ -e "$dir/fake/herdr-agent-active" ] || fail "the flag conflict stopped the original agent"
+
+  rc=0
+  out=$(run_control "$dir" rlpi-conflict exit --fresh-session) || rc=$?
+  expect_code 1 "$rc" "--fresh-session on a verb other than relaunch must die"$'\n'"$out"
+  [ -e "$dir/fake/herdr-agent-active" ] || fail "the misplaced flag stopped the original agent"
+  pass "fm-control relaunch: --fresh-session refuses --pi-session-file and verbs other than relaunch"
+}
+
 test_control_pi_session_requires_post_launch_identity() {
   local dir out rc=0 original newer
   herdr_case_or_skip pi-post-launch-mismatch rlpi-mismatch || return 0
@@ -2664,6 +2735,9 @@ test_control_pi_session_survives_agent_exit
 test_control_can_select_an_existing_older_session_for_the_same_task
 test_control_pi_session_selection_refuses_invalid_owner_before_exit
 test_control_pi_session_requires_post_launch_identity
+test_fresh_session_replaces_a_pi_worker_whose_session_is_unusable
+test_fresh_session_discards_a_resumable_session_only_on_request
+test_fresh_session_conflicts_and_scope_are_refused
 test_herdr_reclaim_adopts_a_pane_that_outlived_its_server
 test_herdr_exit_reports_already_stopped_when_the_pane_outlived_its_server
 test_herdr_rebind_stays_in_the_recorded_session
