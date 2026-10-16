@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Steer a task by durable record: write the message into the task's steering
 # inbox and ring a constant doorbell line into its terminal, best-effort.
-# Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>] <text...>
+# Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>] [--allow-dense] <text...>
 #   <target> may be an exact task id, a legacy fm-<id> task label resolved
 #   through this home's state/<id>.meta, or an explicit well-formed backend
 #   target. fm-send refuses unresolved guesses rather than falling back to a
@@ -11,6 +11,11 @@
 # before anything is marked, recorded, or typed, because an empty marked
 # secondmate request delivers only marker and correlation bytes and leaves the
 # parent waiting on a reply to nothing.
+# A text steer containing a run-together token (words with their spaces deleted,
+# such as `2spentmax4`) is refused before anything is marked, recorded, or
+# typed, because a worker follows such text literally instead of reading it as
+# prose. The error names the first such token; --allow-dense sends the text
+# anyway. bin/fm-prose-lib.sh owns what counts as run-together.
 # Special keys instead of text: fm-send.sh <target> --key Enter
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
@@ -250,6 +255,8 @@ fi
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-line-cap-lib.sh
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
+# shellcheck source=bin/fm-prose-lib.sh
+. "$SCRIPT_DIR/fm-prose-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-task-inbox-lib.sh
@@ -462,6 +469,7 @@ fi
 # message exactly as before, so ordinary sends are byte-identical.
 RESOLVE_KEYS=
 FIRE_AND_FORGET_ID=
+ALLOW_DENSE=0
 fm_send_add_resolve_key() { # <key>
   local k=$1
   case "$k" in
@@ -512,9 +520,18 @@ while :; do
     FIRE_AND_FORGET_ID=${1#--fire-and-forget=}
     shift
     ;;
+  --allow-dense)
+    ALLOW_DENSE=1
+    shift
+    ;;
   *) break ;;
   esac
 done
+
+if [ "${1:-}" != "--key" ] && [ "$ALLOW_DENSE" -eq 0 ] && DENSE_TOKEN=$(fm_prose_dense_token "$*"); then
+  echo "error: the steering message contains the run-together token '$DENSE_TOKEN'; write plain prose with ordinary spaces between words (a worker follows dense text literally), or pass --allow-dense if the token is intentional; nothing was sent" >&2
+  exit 1
+fi
 
 if [ "$TARGET_BACKEND" != remote ]; then
   fm_backend_validate "$TARGET_BACKEND" || exit 1

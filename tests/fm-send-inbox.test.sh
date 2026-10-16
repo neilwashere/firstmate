@@ -27,6 +27,9 @@
 #  10. An empty or whitespace-only text steer is refused before anything is
 #      marked, recorded, or typed - on the marked secondmate path that means
 #      no marker-only record and no pending-reply expectation.
+#  11. A text steer with a run-together token is refused before anything is
+#      recorded or typed unless --allow-dense is passed; plain steers are
+#      unaffected.
 # Every case below that passes a literal `$...` message quotes it on purpose
 # (the point is sending an unexpanded `$` line), so SC2016 is disabled.
 # shellcheck disable=SC2016
@@ -520,3 +523,35 @@ test_post_enqueue_bookkeeping_failure_is_not_retryable
 test_meta_lock_contention_fails_bounded
 test_unwritable_inbox_fails_loudly
 test_empty_message_refused
+
+test_dense_steer_refused_unless_allowed() {
+  local dir err rc rec body
+  dir=$(setup_case dense-refused)
+  err="$dir/send.err"
+  run_send "$dir" "$err" -- t1 "status 2spentmax4 unchanged"
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a steer with a run-together token should refuse"
+  assert_contains "$(cat "$err")" "2spentmax4" "the refusal should name the offending token"
+  assert_contains "$(cat "$err")" "--allow-dense" "the refusal should name the override"
+  [ ! -d "$dir/home/state/t1.inbox" ] || fail "a refused dense steer still wrote an inbox record"
+  [ ! -s "$dir/send.log" ] || fail "a refused dense steer still typed something:"$'\n'"$(cat "$dir/send.log")"
+
+  dir=$(setup_case dense-allowed)
+  err="$dir/send.err"
+  run_send "$dir" "$err" -- t1 --allow-dense "status 2spentmax4 unchanged"
+  rc=$?
+  expect_code 0 "$rc" "--allow-dense should send a dense steer"
+  rec="$dir/home/state/t1.inbox/001.msg"
+  [ -f "$rec" ] || fail "the allowed dense steer was not recorded"
+  body=$(record_body _ "$rec")
+  [ "$body" = "status 2spentmax4 unchanged" ] || fail "--allow-dense altered the recorded body: $body"
+
+  dir=$(setup_case dense-plain)
+  err="$dir/send.err"
+  run_send "$dir" "$err" -- t1 "Please rebase onto main, see https://github.com/x/y/pull/11 and v0.12.0 (b3f73e16)."
+  rc=$?
+  expect_code 0 "$rc" "a plain steer should be unaffected by the prose check"
+  pass "fm-send: a run-together steer refuses before recording unless --allow-dense is passed"
+}
+
+test_dense_steer_refused_unless_allowed
