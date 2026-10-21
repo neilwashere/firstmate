@@ -418,7 +418,7 @@ test_duplicate_secondmate_spawn_does_not_converge_trace_context() {
   pass "duplicate secondmate preflight leaves trace-context unchanged"
 }
 
-test_relaunch_reuses_recorded_carrier() {
+test_duplicate_spawn_preserves_recorded_carrier() {
   local rec out status meta first second injected
   rec=$(make_spawn_case tc-relaunch)
   read_case_record "$rec"
@@ -433,18 +433,17 @@ test_relaunch_reuses_recorded_carrier() {
   first=$(meta_traceparent "$meta")
   fm_trace_context_valid "$first" || fail "first spawn must record a valid carrier (got '$first')"
 
-  # Relaunch the same task: the recorded carrier must be reused verbatim for both
-  # the meta and the injected export, so an observer keeps one identity across
-  # restarts.
+  # A fresh second allocation for the same task is not a relaunch: it must
+  # refuse the retained attempt without overwriting the original carrier.
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$CASE_ID" "$PROJ_DIR")
   status=$?
-  expect_code 0 "$status" "relaunch spawn should succeed"
-  assert_contains "$out" "spawned $CASE_ID" "relaunch spawn should report success"
+  [ "$status" -ne 0 ] || fail "duplicate task spawn allocated a second copy"
+  assert_contains "$out" "prior Treehouse placement attempt" "duplicate spawn must name its retained allocation"
   second=$(meta_traceparent "$meta")
   injected=$(injected_traceparent "$LAUNCH_LOG")
-  [ "$second" = "$first" ] || fail "relaunch must reuse the recorded carrier in meta (first='$first' second='$second')"
-  [ "$injected" = "$first" ] || fail "relaunch must inject the same recorded carrier (first='$first' injected='$injected')"
-  pass "relaunch reuses the recorded carrier verbatim for both the meta record and the injected export"
+  [ "$second" = "$first" ] || fail "duplicate spawn changed the recorded carrier (first='$first' second='$second')"
+  [ -z "$injected" ] || fail "duplicate spawn injected a new carrier"
+  pass "duplicate task allocation refuses without changing its recorded carrier"
 }
 
 test_session_start_freezes_env_override_and_ignores_later_edits() {
@@ -512,12 +511,12 @@ test_secondmate_env_off_file_present_keeps_nested_worker_disabled() {
 # Secondmate exports one TRACEPARENT into its process environment at its own
 # launch, and later routed requests never replace that environment. Two
 # unrelated tasks spawned sequentially from that one environment must root two
-# distinct traces, and neither may adopt the Secondmate's own trace id, while
-# each task still keeps one stable identity across its own relaunch.
+# distinct traces, and neither may adopt the Secondmate's own trace id. The
+# library-level relaunch carrier contract is covered in fm-trace-context-lib.test.sh.
 test_two_routed_tasks_through_one_secondmate_root_distinct_traces() {
   local base sm fakebin sm_tp out status
   local id_a id_b proj_a proj_b wt_a wt_b log_a log_b
-  local tp_a tp_b in_a in_b relaunch_tp relaunch_in
+  local tp_a tp_b in_a in_b duplicate_tp duplicate_in
   base="$TMP_ROOT/routed-boundary"
   sm="$base/sm-home"
   mkdir -p "$sm/data" "$sm/projects" "$sm/state" "$sm/config"
@@ -568,18 +567,18 @@ test_two_routed_tasks_through_one_secondmate_root_distinct_traces() {
   [ "${tp_a:3:32}" != "${tp_b:3:32}" ] \
     || fail "two unrelated routed tasks must root distinct trace ids (A='$tp_a' B='$tp_b')"
 
-  # Same environment, same task: a relaunch must reuse task A's recorded
-  # carrier verbatim, so the per-task boundary never costs recovery identity.
+  # The second ordinary spawn of task A cannot silently allocate a new copy
+  # or adopt the routing Secondmate's carrier.
   out=$(TRACEPARENT="$sm_tp" run_spawn "$sm" "$wt_a" "$fakebin" "$log_a" "$id_a" "$proj_a")
   status=$?
-  expect_code 0 "$status" "routed task A relaunch should succeed"
-  relaunch_tp=$(meta_traceparent "$sm/state/$id_a.meta")
-  relaunch_in=$(injected_traceparent "$log_a")
-  [ "$relaunch_tp" = "$tp_a" ] \
-    || fail "task A's relaunch must keep its original carrier (first='$tp_a' relaunch='$relaunch_tp')"
-  [ "$relaunch_in" = "$tp_a" ] \
-    || fail "task A's relaunch must inject its original carrier (first='$tp_a' injected='$relaunch_in')"
-  pass "two unrelated routed tasks through one persistent Secondmate root distinct traces, adopt nothing from its environment, and keep per-task identity across relaunch"
+  [ "$status" -ne 0 ] || fail "routed task A allocated a second copy"
+  assert_contains "$out" "prior Treehouse placement attempt" "routed duplicate must name its retained allocation"
+  duplicate_tp=$(meta_traceparent "$sm/state/$id_a.meta")
+  duplicate_in=$(injected_traceparent "$log_a")
+  [ "$duplicate_tp" = "$tp_a" ] \
+    || fail "task A's duplicate changed its original carrier (first='$tp_a' second='$duplicate_tp')"
+  [ -z "$duplicate_in" ] || fail "task A's duplicate injected a new carrier"
+  pass "routed tasks keep distinct traces, and a duplicate task allocation preserves its carrier"
 }
 
 # Single-frozen-decision guarantee: for a secondmate spawn the recorded/injected
@@ -607,7 +606,7 @@ test_failed_delivery_omits_metadata_and_still_launches
 test_unsafe_delivery_refuses_to_append_launch
 test_failed_metadata_append_unsets_carrier_and_still_launches
 test_duplicate_secondmate_spawn_does_not_converge_trace_context
-test_relaunch_reuses_recorded_carrier
+test_duplicate_spawn_preserves_recorded_carrier
 test_session_start_freezes_env_override_and_ignores_later_edits
 test_secondmate_env_on_file_absent_keeps_nested_worker_enabled
 test_secondmate_env_off_file_present_keeps_nested_worker_disabled

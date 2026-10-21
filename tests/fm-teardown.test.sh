@@ -2910,6 +2910,103 @@ SH
   chmod +x "$case_dir/fakebin/herdr"
 }
 
+test_herdr_projected_teardown_preserves_focus_through_worktree_return() {
+  local case_dir closed restored drift
+  case_dir=$(make_case herdr-projection-return-focus)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  closed="$case_dir/closed"; restored="$case_dir/restored"; drift="$case_dir/return-focus-drift"
+  : > "$case_dir/herdr.log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ] && [ ! -e "${FM_FAKE_HERDR_CLOSED:?}" ]; then
+  : > "${FM_FAKE_RETURN_FOCUS_DRIFT:?}"
+fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  FM_FAKE_HERDR_LOG="$case_dir/herdr.log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_RESTORED="$restored" FM_FAKE_RETURN_FOCUS_DRIFT="$drift" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "projected teardown of a clean, landed task failed: $(cat "$case_dir/stderr")"
+  [ ! -e "$drift" ] || fail "returning a worktree while its exact projected pane remains open can move user focus"
+  [ -e "$closed" ] && [ -e "$restored" ] \
+    || fail "projected teardown did not close the exact pane and restore the prior focus"
+  [ ! -e "$case_dir/state/task-x1.meta" ] && [ ! -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    || fail "confirmed projected cleanup retained a task record or journal"
+  pass "projected teardown closes its exact pane before returning the clean worktree, preserving user focus"
+}
+
+test_herdr_projection_refuses_unlanded_work_before_pane_close() {
+  local case_dir closed return_marker rc=0
+  case_dir=$(make_case herdr-projection-unlanded)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  wt_commit_file "$case_dir" unlanded.txt 'retain this work'
+  closed="$case_dir/closed"; return_marker="$case_dir/return-attempted"
+  : > "$case_dir/herdr.log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then : > "${FM_FAKE_TREEHOUSE_RETURN_MARKER:?}"; fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  FM_FAKE_HERDR_LOG="$case_dir/herdr.log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_RESTORED="$case_dir/restored" FM_FAKE_TREEHOUSE_RETURN_MARKER="$return_marker" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "projected teardown discarded unlanded work"
+  [ ! -e "$closed" ] && [ ! -e "$return_marker" ] \
+    || fail "unlanded-work refusal closed the worker pane or returned its copy"
+  [ -e "$case_dir/state/task-x1.meta" ] && [ -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    && [ "$(git -C "$case_dir/wt" show HEAD:unlanded.txt)" = 'retain this work' ] \
+    || fail "unlanded-work refusal lost the record, journal or task commit"
+  pass "projected teardown refuses unlanded work before closing the pane or returning its copy"
+}
+
+test_herdr_projection_return_failure_preserves_task_custody() {
+  local case_dir closed restored rc=0
+  case_dir=$(make_case herdr-projection-return-failure)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$case_dir/herdr.log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then
+  printf '%s\n' 'fixture return refused' >&2
+  exit 42
+fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  FM_FAKE_HERDR_LOG="$case_dir/herdr.log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_RESTORED="$restored" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "projected teardown reported success after Treehouse refused return"
+  [ -e "$closed" ] && [ -e "$restored" ] \
+    || fail "failed return did not preserve a confirmed focus-safe pane close"
+  if [ ! -e "$case_dir/state/task-x1.meta" ] || [ ! -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    || [ ! -d "$case_dir/wt" ] || ! git -C "$case_dir/wt" rev-parse HEAD >/dev/null 2>&1; then
+    fail "failed return discarded the task record, journal or local copy"
+  fi
+  assert_grep 'treehouse return failed' "$case_dir/stderr" \
+    'failed return did not report the retained task copy'
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  FM_FAKE_HERDR_LOG="$case_dir/herdr.log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_RESTORED="$restored" \
+    run_teardown "$case_dir" > "$case_dir/retry.stdout" 2> "$case_dir/retry.stderr" \
+    || fail "guarded retry after refused return failed: $(cat "$case_dir/retry.stderr")"
+  [ ! -e "$case_dir/state/task-x1.meta" ] && [ ! -e "$case_dir/state/task-x1.herdr-presentation" ] \
+    || fail "guarded retry did not retire the exact task record and journal"
+  pass "projected teardown retains custody after a failed return and completes on an exact retry"
+}
+
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close() {
   local case_dir log closed restored
   case_dir=$(make_case herdr-projection-confirmed-close)
@@ -2930,14 +3027,22 @@ test_herdr_projection_teardown_retires_journal_only_after_confirmed_close() {
 }
 
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed() {
-  local case_dir log closed restored
+  local case_dir log closed restored return_marker
   case_dir=$(make_case herdr-projection-unconfirmed-close)
   write_meta "$case_dir" local-only ship
   configure_herdr_projection_teardown_case "$case_dir"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; restored="$case_dir/restored"; : > "$log"
+  return_marker="$case_dir/return-attempted"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then : > "${FM_FAKE_TREEHOUSE_RETURN_MARKER:?}"; fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
 
   local rc=0
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_RESTORED="$restored" FM_FAKE_HERDR_PRESENCE_UNKNOWN=1 \
+    FM_FAKE_TREEHOUSE_RETURN_MARKER="$return_marker" \
     run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   [ "$rc" -ne 0 ] \
     || fail "herdr-projection-unconfirmed-close: teardown reported success after an unknown post-close presence read"
@@ -2947,10 +3052,12 @@ test_herdr_projection_teardown_retains_journal_when_close_unconfirmed() {
     || fail "unconfirmed task-pane close incorrectly retired the presentation journal"
   [ -e "$case_dir/state/task-x1.meta" ] \
     || fail "unconfirmed task-pane close erased the durable endpoint metadata"
-  assert_grep "close could not be confirmed" "$case_dir/stderr" \
+  assert_grep "exact herdr pane close for task-x1 was not confirmed" "$case_dir/stderr" \
     "unconfirmed projected close did not explain why the journal was retained"
-  assert_grep "not confirmed gone" "$case_dir/stderr" \
+  assert_grep "retaining its worktree, journal and task record" "$case_dir/stderr" \
     "unconfirmed projected close did not explain why the records were retained"
+  [ ! -e "$return_marker" ] \
+    || fail "unconfirmed pane close returned the worktree before verifying its custody"
   assert_not_contains "$(cat "$log")" "workspace close" \
     "unconfirmed projected close must not escalate to workspace cleanup"
   pass "herdr projection teardown retains every record when post-close presence is unknown"
@@ -3038,6 +3145,8 @@ test_teardown_retains_journal_bound_to_another_pane() {
   assert_absent "$case_dir/state/task-x1.meta" "retain-drifted-journal: teardown did not complete"
   assert_grep "retaining herdr presentation journal" "$case_dir/stderr" \
     "teardown kept the drifted journal without saying why"
+  assert_not_contains "$(cat "$log")" 'pane close w1:p9' \
+    'teardown touched the pane named only by a foreign journal binding'
   pass "teardown retains a presentation journal bound to a pane other than the closed endpoint"
 }
 
@@ -4523,6 +4632,9 @@ test_forced_secondmate_herdr_child_preflight_refuses_before_changes
 test_forced_secondmate_teardown_holds_descendant_lifecycle_locks
 test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed
 test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconfirmed
+test_herdr_projected_teardown_preserves_focus_through_worktree_return
+test_herdr_projection_refuses_unlanded_work_before_pane_close
+test_herdr_projection_return_failure_preserves_task_custody
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup

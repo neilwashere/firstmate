@@ -8,6 +8,7 @@ set -u
 ACTION_REF=32d396ac0f29135daf7fcb9964aba9d5f4e796d6
 TMP_ROOT=$(fm_test_tmproot fm-no-mistakes-required)
 VERIFY="$TMP_ROOT/verify.py"
+WORKFLOW="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)/.github/workflows/no-mistakes-required.yml"
 OLD_SHA=1111111111111111111111111111111111111111
 NEW_SHA=2222222222222222222222222222222222222222
 SIGNATURE='Updates from [git push no-mistakes](https://github.com/kunchenguid/no-mistakes)'
@@ -66,6 +67,21 @@ test_missing_head_fails() {
   pass "shared action rejects an attestation with no head_sha"
 }
 
+test_only_upstream_requires_attestation() {
+  grep -Fq "github.repository == 'kunchenguid/firstmate' &&" "$WORKFLOW" ||
+    fail "the attestation job still runs on the independent Firstmate fork"
+  grep -Fq "github.event.pull_request.user.login != 'github-actions[bot]' &&" "$WORKFLOW" ||
+    fail "the attestation job lost its existing bot exemption"
+  grep -Fq "github.event.pull_request.user.login != 'dependabot[bot]'" "$WORKFLOW" ||
+    fail "the attestation job lost its existing dependabot exemption"
+  grep -Fq 'uses: "kunchenguid/no-mistakes/.github/actions/' "$WORKFLOW" ||
+    fail "the upstream attestation action was removed"
+  grep -Fq 'require-no-mistakes@f6441c96c352a18b9cadcaef6b6c7017e9ac3970' "$WORKFLOW" ||
+    fail "the upstream attestation action lost its pinned version"
+  pass "only upstream requires the pinned no-mistakes attestation"
+}
+
+test_only_upstream_requires_attestation
 fetch_shared_verifier
 test_matching_head_and_completed_steps_pass
 test_mismatched_head_fails_with_both_shas

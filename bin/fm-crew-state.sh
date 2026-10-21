@@ -221,6 +221,7 @@ meta_value() {  # <key>
 
 WT=$(meta_value worktree)
 KIND=$(meta_value kind)
+SHIP_MODE=$(meta_value mode)
 HARNESS=$(meta_value harness)
 REMOTE_HOST=$(meta_value remote_host)
 [ -n "$KIND" ] || KIND=ship
@@ -941,6 +942,24 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
     run_overview=$(fm_nm_run_checked "$WT" "$NM_TIMEOUT" axi) || overview_ok=0
     [ -n "$run_overview" ] || emit unknown run-step "run inventory unavailable; run id: $(strip_quotes "$(nm_field id)")"
     run_choice=$(fm_nm_select_run "$CREW_BRANCH" "$run_overview" "$WT" "$NM_TIMEOUT")
+    # A recorded terminal run belongs to the former delivery path after an
+    # explicit mode change; a live or ambiguous owner still takes precedence.
+    if [ "$overview_ok" = 1 ] && { [ "$SHIP_MODE" = direct-PR ] || [ "$SHIP_MODE" = local-only ]; }; then
+      case "$run_choice" in
+        selected\|*)
+          IFS='|' read -r _ _ selected_mode_status _ <<< "$run_choice"
+          if [ "$(fm_nm_run_status_class "$selected_mode_status")" = terminal ] \
+            && ! fm_nm_run_is_active "$RUN_OUT"; then
+            RUN_OUT=""
+          fi ;;
+        unavailable)
+          if [ "$(strip_quotes "$(nm_field branch)")" = "$CREW_BRANCH" ] \
+            && ! fm_nm_run_is_active "$RUN_OUT"; then
+            RUN_OUT=""
+          fi ;;
+      esac
+    fi
+    if [ -n "$RUN_OUT" ]; then
     [ "$overview_ok" = 1 ] || emit unknown run-step "run inventory unreadable; run ids: $(strip_quotes "$(nm_field id)"), ${run_choice##*|}"
     case "$run_choice" in
       unknown\|*)
@@ -1036,6 +1055,7 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
           [ "$run_branch" = "$CREW_BRANCH" ] || RUN_SOURCE=coarse
         fi
       fi
+    fi
     fi
   fi
 fi
